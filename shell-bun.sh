@@ -83,7 +83,7 @@ while [[ $# -gt 0 ]]; do
             echo "Non-interactive mode (CI/CD):"
             echo "  $0 --ci APP ACTION         # Run specific action for app"
             echo "  $0 --ci APP ACTION1,ACTION2 # Run multiple actions"
-            echo "  $0 --ci APP all            # Run all available actions for app"
+            echo "  $0 --ci APP all            # Run all available build actions for app"
             echo ""
             echo "Available actions: build_host, build_target, run_host, clean"
             echo ""
@@ -965,8 +965,6 @@ execute_ci_mode() {
         # Add all available actions for this app
         [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && action_list+=("build_host")
         [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && action_list+=("build_target")
-        [[ -n "${APP_RUN_HOST[$app]:-}" ]] && action_list+=("run_host")
-        [[ -n "${APP_CLEAN[$app]:-}" ]] && action_list+=("clean")
     else
         # Split comma-separated actions
         IFS=',' read -ra action_list <<< "$actions"
