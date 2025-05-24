@@ -479,7 +479,7 @@ show_unified_menu() {
             $'\x1b') # Escape key or arrow keys
                 debug_log "Detected ESC sequence"
                 # Read the next part to distinguish between ESC and arrow keys
-                read -rsn2 arrows 2>/dev/null
+                read -rsn2 -t 0.1 arrows 2>/dev/null
                 debug_log "Arrow sequence: '$arrows'"
                 if [[ "$arrows" == "[A" ]]; then
                     # Up arrow
@@ -615,44 +615,7 @@ show_unified_menu() {
                 execute_parallel
                 action_taken=true
                 ;;
-            'e'|'E') # Alternative Enter key for WSL compatibility
-                debug_log "Alternative ENTER key pressed (e/E)"
-                if [[ ${#filtered[@]} -gt 0 ]]; then
-                    local selection="${filtered[$selected]}"
-                    debug_log "Selected item: '$selection'"
-                    if [[ "$selection" =~ ^(.+)\ -\ Show\ Details$ ]]; then
-                        debug_log "Showing details for app"
-                        local app="${BASH_REMATCH[1]}"
-                        clear
-                        show_app_details "$app"
-                        echo "Press any key to continue..."
-                        read -n1
-                    else
-                        # Always execute the currently highlighted command (ignore selections)
-                        debug_log "Executing highlighted command with summary (E key always executes current item)"
-                        if [[ "$selection" =~ ^(.+)\ -\ (.+)$ ]]; then
-                            local app="${BASH_REMATCH[1]}"
-                            local action="${BASH_REMATCH[2]}"
-                            
-                            case "$action" in
-                                "Build (Host)")
-                                    execute_single "$app" "$action" "build_host"
-                                    ;;
-                                "Build (Target)")
-                                    execute_single "$app" "$action" "build_target"
-                                    ;;
-                                "Run (Host)")
-                                    execute_single "$app" "$action" "run_host"
-                                    ;;
-                                "Clean")
-                                    execute_single "$app" "$action" "clean"
-                                    ;;
-                            esac
-                        fi
-                    fi
-                fi
-                action_taken=true
-                ;;
+
         esac
         
         # If no action was taken by special keys, handle as filter input
