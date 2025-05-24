@@ -1012,11 +1012,8 @@ execute_ci_mode() {
         local -a matched_actions
         readarray -t matched_actions <<< "$matched_actions_output"
         
-        echo "Preparing $app: ${matched_actions[*]}"
-        
         # Start app processing in background
         (
-            echo "--- Processing: $app (PID: $$) ---"
             local app_success=0
             local app_failure=0
             
@@ -1031,8 +1028,6 @@ execute_ci_mode() {
                     ((app_failure++))
                 fi
             done
-            
-            echo "--- $app completed: $app_success success, $app_failure failed ---"
             
             # Exit with failure if any action failed
             if [[ $app_failure -gt 0 ]]; then
@@ -1063,10 +1058,8 @@ execute_ci_mode() {
         local action_count="${app_action_counts[$i]}"
         
         if wait "$pid"; then
-            echo "✅ $app_name completed successfully"
             ((total_success += action_count))
         else
-            echo "❌ $app_name failed"
             ((total_failure += action_count))
             failed_apps+=("$app_name")
         fi
