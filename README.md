@@ -4,11 +4,22 @@
 
 An interactive bash script for managing build environments with advanced features and no external dependencies.
 
+## 🚀 Easy Deployment
+
+**Shell-Bun is completely standalone** - it's a single bash script with zero dependencies that can be deployed anywhere instantly:
+
+- **Copy & Run**: Simply copy `shell-bun.sh` to any system with bash > 4, write a simple `shell-bun.cfg` file and run `shell-bun.sh`
+- **No Installation Required**: No package managers, no compilation, no setup scripts
+- **Portable**: Works on Linux, macOS, Windows (with bash), containers, cloud instances, embedded systems
+- **Self-Contained**: Everything needed is in one file - perfect for DevOps, CI/CD, and quick deployments
+- **Version Control Friendly**: Add it directly to your project repositories
+
 ## Features
 
 - **Unified Interactive Menu**: Seamlessly combine arrow-key navigation with fuzzy search typing
 - **Multi-Selection**: Select multiple commands and execute them in parallel
 - **Simple Configuration Format**: Define applications and their build commands in a clean INI-style format
+- **Working Directory Support**: Specify custom working directories for each application
 - **Built-in Status Messages**: Automatic progress logging with emojis and colors
 - **Parallel Execution**: Run multiple commands simultaneously with execution summary
 - **Color-coded Output**: Beautiful terminal interface with intuitive visual feedback
@@ -57,13 +68,6 @@ bash shell-bun.sh
 - **'+'**: Select all actionable commands
 - **'-'**: Clear all selections
 
-### Visual Indicators
-- **Green ►**: Currently highlighted item
-- **[✓]**: Item selected for batch execution
-- **🚀**: Command starting
-- **✅**: Command completed successfully
-- **❌**: Command failed
-
 ## Configuration File Format
 
 The configuration file uses a simple INI-style format:
@@ -75,11 +79,13 @@ build_host=command to build for host
 build_target=command to build for target platform
 run_host=command to run on host
 clean=command to clean build directory
+working_dir=optional/path/to/working/directory
 
 [AnotherApp]
 build_host=make all
 run_host=./app
 clean=make clean
+working_dir=~/projects/my-app
 ```
 
 ### Available Command Types
@@ -88,35 +94,45 @@ clean=make clean
 - `build_target`: Commands to build for a target platform (cross-compilation)
 - `run_host`: Commands to run the application on the host
 - `clean`: Commands to clean build artifacts
+- `working_dir`: Optional working directory where commands should be executed
+
+### Working Directory Support
+
+The `working_dir` field allows you to specify where commands should be executed:
+
+- **Absolute paths**: `/full/path/to/directory`
+- **Relative paths**: `../relative/path` (relative to script location)
+- **Tilde expansion**: `~/user/directory` (expands to home directory)
+- **Default behavior**: If not specified, commands run from the script's directory
+
+```ini
+[WebApp]
+build_host=npm run build
+working_dir=~/projects/my-webapp
+
+[BackendAPI]
+build_host=cargo build --release
+working_dir=../backend
+
+[LegacySystem]
+build_host=make all
+working_dir=/opt/legacy-app
+```
 
 ### Example Configuration
 
 See `shell-bun.cfg` for a complete example with multiple applications using `sleep` commands for testing.
-
-## Sample Applications
-
-The included `shell-bun.cfg` contains example applications:
-
-- **MyWebApp**: Web application with host/target builds
-- **DatabaseService**: Database service with host build and run
-- **MobileApp**: Mobile app with dev and production builds
-- **APIServer**: API server with host and ARM target builds
-- **Frontend**: Frontend application with dev server
-- **TestSuite**: Test suite with compilation and execution
 
 ## Command Execution
 
 ### Single Command Execution
 1. Navigate to or filter for desired command
 2. Press Enter to execute immediately
-3. Real-time status updates with emojis
-4. Execution summary with success/failure status
 
 ### Parallel Execution
 1. Use Space to select multiple commands (shows [✓] indicator)
 2. Press Enter when items are selected to run all simultaneously
-3. Commands execute in parallel in background processes
-4. Detailed execution summary with individual success/failure tracking
+Commands execute in parallel in background processes
 
 ## Built-in Status Messages
 
@@ -143,51 +159,6 @@ Type any part of an application name or command to filter results instantly:
 - Type "api host" to find "APIServer - Build (Host)"
 - Search is case-insensitive and matches anywhere in the text
 
-### Smart Selection Management
-- Selection persists across filtering operations
-- Can't select "Show Details" items for execution
-- Visual feedback for all selected items with [✓] markers
-- Clear selection status display
-
-### Enhanced Navigation
-- Page Up/Page Down for quick navigation through long lists
-- Arrow keys for precise navigation
-- Filter state preserved during navigation
-
-### Parallel Processing
-- Multiple commands run simultaneously in background
-- Individual status tracking for each command
-- Overall execution summary with detailed failure reporting
-- Non-blocking interface during execution
-
-### Debug Mode
-Enable debug mode for troubleshooting:
-```bash
-./shell-bun.sh --debug
-```
-
-Debug mode features:
-- Creates `debug.log` file with detailed execution logs
-- Enhanced error output display
-- Key press analysis for terminal compatibility issues
-- Detailed command execution tracking
-
-## Safety Features
-
-- Commands are displayed before execution
-- User-friendly execution summaries
-- Exit codes are captured and displayed
-- Failed commands don't affect other parallel executions
-- Ctrl+C can be used to cancel operations
-- Error output captured and optionally displayed in debug mode
-
-## Terminal Compatibility
-
-Shell-Bun includes enhanced compatibility features:
-- **WSL Support**: Special handling for Windows Subsystem for Linux key detection
-- **Various Terminal Types**: Works with Git Bash, standard bash, zsh, etc.
-- **Key Detection**: Advanced key sequence detection for arrow keys, page up/down
-- **Color Support**: Automatic color detection and fallback
 
 ## Customization
 
@@ -196,46 +167,5 @@ To create your own build environment:
 1. Copy `shell-bun.cfg` to a new file
 2. Replace the example applications with your actual projects
 3. Replace `sleep` commands with real build commands
-4. Run the script with your config file
-
-Example real-world configuration:
-```ini
-[WebAPI]
-build_host=cd api && npm install && npm run build
-build_target=cd api && npm run build:prod
-run_host=cd api && npm start
-clean=cd api && rm -rf node_modules dist
-
-[Frontend]
-build_host=cd frontend && yarn install && yarn build
-run_host=cd frontend && yarn dev
-clean=cd frontend && rm -rf node_modules dist
-
-[Backend]
-build_host=cargo build
-build_target=cargo build --release
-run_host=cargo run
-clean=cargo clean
-```
-
-## Performance
-
-- Instant filtering and navigation response
-- Non-blocking parallel execution
-- Minimal resource usage
-- Efficiently handles dozens of applications
-- Background process management for parallel commands
-
-## Troubleshooting
-
-### Common Issues
-- **Script not executable**: Use `bash shell-bun.sh` instead of `./shell-bun.sh`
-- **Colors not working**: Your terminal may not support ANSI colors
-- **Arrow keys not working**: Ensure you're in a proper bash terminal
-- **Config file not found**: Check the file path and permissions
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-Copyright (c) 2025 Fredrik Reveny 
+4. Optionally specify working directories for each application
+5. Run the script with your config file
