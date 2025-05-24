@@ -351,6 +351,46 @@ select_none() {
     SELECTED_ITEMS=()
 }
 
+# Function to select all currently filtered actionable items
+select_filtered() {
+    local -a filtered_items=("$@")
+    
+    for item in "${filtered_items[@]}"; do
+        # Skip "Show Details" items and only select actionable items
+        if [[ ! "$item" =~ -\ Show\ Details$ ]]; then
+            # Check if item is not already selected
+            if ! is_selected "$item"; then
+                SELECTED_ITEMS+=("$item")
+                debug_log "Added to selection: '$item'"
+            fi
+        fi
+    done
+}
+
+# Function to deselect all currently filtered items
+deselect_filtered() {
+    local -a filtered_items=("$@")
+    local -a new_selected=()
+    
+    # Keep only items that are NOT in the filtered list
+    for selected_item in "${SELECTED_ITEMS[@]}"; do
+        local found_in_filtered=false
+        for filtered_item in "${filtered_items[@]}"; do
+            if [[ "$selected_item" == "$filtered_item" ]]; then
+                found_in_filtered=true
+                debug_log "Removing from selection: '$selected_item'"
+                break
+            fi
+        done
+        
+        if [[ "$found_in_filtered" == "false" ]]; then
+            new_selected+=("$selected_item")
+        fi
+    done
+    
+    SELECTED_ITEMS=("${new_selected[@]}")
+}
+
 
 
 # Function to display unified menu
@@ -399,11 +439,11 @@ show_unified_menu() {
         print_color "$BLUE" "╚════════════════════════════════════════════════╝"
         echo
         print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: jump 10 lines | Type: filter | Space: select | Enter: execute | ESC: quit"
-        print_color "$CYAN" "Shortcuts: '+': select all | '-': clear selections | Enter: run current or selected"
+        print_color "$CYAN" "Shortcuts: '+': select visible | '-': deselect visible | Enter: run current or selected"
         echo
         
-        # Clear content area if filter changed (but not full screen to avoid flicker)
-        if [[ "$filter_changed" == "true" ]]; then
+        # Clear content area if filter changed or selections changed (but not full screen to avoid flicker)
+        if [[ "$filter_changed" == "true" ]] || [[ "$need_full_clear" == "true" && "$first_draw" == "false" ]]; then
             printf '\033[J'  # Clear from cursor to end of screen
         fi
         
@@ -588,6 +628,15 @@ show_unified_menu() {
                             selected=$new_selected
                         fi
                     fi
+                elif [[ "$arrows" == "[3" ]]; then
+                    # Potential Ctrl+Backspace sequence - read final character
+                    read -rsn1 -t 0.1 final_char 2>/dev/null
+                    if [[ "$final_char" == "~" ]]; then
+                        debug_log "Ctrl+Backspace (ESC sequence) pressed - clearing filter"
+                        filter=""
+                        selected=0
+                        need_full_clear=true
+                    fi
                 else
                     # Plain ESC key or unknown sequence - quit
                     debug_log "ESC key pressed - quitting"
@@ -655,6 +704,7 @@ show_unified_menu() {
                         debug_log "Toggling selection for: '$selection'"
                         toggle_selection "$selection"
                         debug_log "After toggle, selected items: ${#SELECTED_ITEMS[@]}"
+                        need_full_clear=true
                     else
                         debug_log "Cannot select 'Show Details' item"
                     fi
@@ -710,14 +760,15 @@ show_unified_menu() {
                 fi
                 action_taken=true
                 ;;
-            '+') # Plus - select all
-                debug_log "Plus key pressed - selecting all"
-                select_all
+            '+') # Plus - select all filtered items
+                debug_log "Plus key pressed - selecting all filtered items"
+                select_filtered "${filtered[@]}"
+                need_full_clear=true
                 action_taken=true
                 ;;
-            '-') # Minus - clear selections
-                debug_log "Minus key pressed - clearing selections"
-                select_none
+            '-') # Minus - deselect filtered items
+                debug_log "Minus key pressed - deselecting filtered items"
+                deselect_filtered "${filtered[@]}"
                 need_full_clear=true
                 action_taken=true
                 ;;
@@ -725,6 +776,20 @@ show_unified_menu() {
                 debug_log "Backspace pressed"
                 filter="${filter%?}"
                 selected=0
+                action_taken=true
+                ;;
+            $'\x17') # Ctrl+Backspace (Ctrl+W) - clear entire filter
+                debug_log "Ctrl+Backspace pressed - clearing filter"
+                filter=""
+                selected=0
+                need_full_clear=true
+                action_taken=true
+                ;;
+            $'\x1f') # Ctrl+Backspace (alternative sequence) - clear entire filter
+                debug_log "Ctrl+Backspace (alt) pressed - clearing filter"
+                filter=""
+                selected=0
+                need_full_clear=true
                 action_taken=true
                 ;;
 
