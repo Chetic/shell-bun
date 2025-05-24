@@ -80,18 +80,32 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 my-config.txt           # Use custom config file"
             echo "  $0 --debug                 # Enable debug logging"
             echo ""
-            echo "Non-interactive mode (CI/CD):"
-            echo "  $0 --ci APP ACTION         # Run specific action for app"
-            echo "  $0 --ci APP ACTION1,ACTION2 # Run multiple actions"
-            echo "  $0 --ci APP all            # Run all available build actions for app"
+            echo "Non-interactive mode (CI/CD) with fuzzy pattern matching:"
+            echo "  $0 --ci APP_PATTERN ACTION_PATTERN   # Run actions matching patterns"
+            echo ""
+            echo "App pattern examples:"
+            echo "  MyWebApp                    # Exact app name"
+            echo "  *Web*                       # Wildcard: any app containing 'Web'"
+            echo "  API*                        # Wildcard: apps starting with 'API'"
+            echo "  web                         # Substring: apps containing 'web'"
+            echo "  MyWebApp,API*,mobile        # Multiple: comma-separated patterns"
+            echo ""
+            echo "Action pattern examples:"
+            echo "  build_host                  # Exact action name"
+            echo "  build*                      # Wildcard: actions starting with 'build'"
+            echo "  *host                       # Wildcard: actions ending with 'host'"
+            echo "  build_host,run_host         # Multiple specific actions"
+            echo "  build                       # Substring: actions containing 'build'"
+            echo "  all                         # All build actions (build_host, build_target)"
             echo ""
             echo "Available actions: build_host, build_target, run_host, clean"
             echo ""
             echo "Examples:"
-            echo "  $0 --ci MyWebApp build_host"
-            echo "  $0 --ci APIServer build_host,run_host"
-            echo "  $0 --ci Frontend all"
-            echo "  $0 --ci --debug MyApp build_host my-config.txt"
+            echo "  $0 --ci MyWebApp build_host          # Build specific app"
+            echo "  $0 --ci \"*Web*\" build*             # Build all Web apps"
+            echo "  $0 --ci \"API*,Frontend\" all        # Build API and Frontend apps"
+            echo "  $0 --ci mobile build_host,run_host   # Multiple actions for mobile apps"
+            echo "  $0 --ci \"*\" build_target my.cfg    # Build all apps for target with custom config"
             exit 0
             ;;
         -*)
@@ -941,80 +955,242 @@ show_unified_menu() {
 
 # Function to execute commands in CI mode (non-interactive)
 execute_ci_mode() {
-    local app="$1"
-    local actions="$2"
+    local app_pattern="$1"
+    local action_pattern="$2"
     
-    # Check if app exists
-    local app_found=false
-    for existing_app in "${APPS[@]}"; do
-        if [[ "$existing_app" == "$app" ]]; then
-            app_found=true
-            break
+    # Match applications using fuzzy patterns
+    local matched_apps_output
+    matched_apps_output=$(match_apps_fuzzy "$app_pattern")
+    
+    if [[ -z "$matched_apps_output" ]]; then
+        echo "Error: No applications found matching pattern '$app_pattern'"
+        echo "Available applications: ${APPS[*]}"
+        echo ""
+        echo "Pattern matching supports:"
+        echo "  - Exact names: MyWebApp"
+        echo "  - Wildcards: *Web*, API*"
+        echo "  - Substrings: web, api"
+        echo "  - Multiple: MyWebApp,API*,mobile"
+        exit 1
+    fi
+    
+    local -a matched_apps
+    readarray -t matched_apps <<< "$matched_apps_output"
+    
+    echo "Shell-Bun CI Mode: Fuzzy Pattern Execution (Parallel)"
+    echo "App pattern: '$app_pattern'"
+    echo "Action pattern: '$action_pattern'"
+    echo "Matched apps: ${matched_apps[*]}"
+    echo "Config: $CONFIG_FILE"
+    echo "========================================"
+    
+    # Prepare parallel execution
+    local -a app_pids=()
+    local -a app_names=()
+    local -a app_action_counts=()
+    
+    # Start all app processing in parallel
+    for app in "${matched_apps[@]}"; do
+        # Skip empty entries
+        [[ -z "$app" ]] && continue
+        
+        # Match actions for this app using fuzzy patterns
+        local matched_actions_output
+        matched_actions_output=$(match_actions_fuzzy "$action_pattern" "$app")
+        
+        if [[ -z "$matched_actions_output" ]]; then
+            echo "Warning: No actions found for '$app' matching pattern '$action_pattern'"
+            local -a available_actions=()
+            [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && available_actions+=("build_host")
+            [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && available_actions+=("build_target")
+            [[ -n "${APP_RUN_HOST[$app]:-}" ]] && available_actions+=("run_host")
+            [[ -n "${APP_CLEAN[$app]:-}" ]] && available_actions+=("clean")
+            echo "Available actions for $app: ${available_actions[*]}"
+            continue
+        fi
+        
+        local -a matched_actions
+        readarray -t matched_actions <<< "$matched_actions_output"
+        
+        echo "Preparing $app: ${matched_actions[*]}"
+        
+        # Start app processing in background
+        (
+            echo "--- Processing: $app (PID: $$) ---"
+            local app_success=0
+            local app_failure=0
+            
+            # Execute each matched action for this app sequentially within the parallel job
+            for action in "${matched_actions[@]}"; do
+                # Skip empty entries
+                [[ -z "$action" ]] && continue
+                
+                if execute_command "$app" "$action"; then
+                    ((app_success++))
+                else
+                    ((app_failure++))
+                fi
+            done
+            
+            echo "--- $app completed: $app_success success, $app_failure failed ---"
+            
+            # Exit with failure if any action failed
+            if [[ $app_failure -gt 0 ]]; then
+                exit 1
+            else
+                exit 0
+            fi
+        ) &
+        
+        # Track the background process
+        app_pids+=($!)
+        app_names+=("$app")
+        app_action_counts+=(${#matched_actions[@]})
+    done
+    
+    echo ""
+    echo "Running ${#app_pids[@]} applications in parallel..."
+    echo "========================================"
+    
+    # Wait for all background processes and collect results
+    local total_success=0
+    local total_failure=0
+    local -a failed_apps=()
+    
+    for i in "${!app_pids[@]}"; do
+        local pid="${app_pids[$i]}"
+        local app_name="${app_names[$i]}"
+        local action_count="${app_action_counts[$i]}"
+        
+        if wait "$pid"; then
+            echo "✅ $app_name completed successfully"
+            ((total_success += action_count))
+        else
+            echo "❌ $app_name failed"
+            ((total_failure += action_count))
+            failed_apps+=("$app_name")
         fi
     done
     
-    if [[ "$app_found" == "false" ]]; then
-        echo "Error: Application '$app' not found in configuration"
-        echo "Available applications: ${APPS[*]}"
-        exit 1
-    fi
-    
-    # Parse actions
-    local -a action_list=()
-    if [[ "$actions" == "all" ]]; then
-        # Add all available actions for this app
-        [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && action_list+=("build_host")
-        [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && action_list+=("build_target")
-    else
-        # Split comma-separated actions
-        IFS=',' read -ra action_list <<< "$actions"
-    fi
-    
-    if [[ ${#action_list[@]} -eq 0 ]]; then
-        echo "Error: No valid actions specified or available for '$app'"
-        echo "Available actions: build_host, build_target, run_host, clean"
-        exit 1
-    fi
-    
-    echo "Shell-Bun CI Mode: Executing $app"
-    echo "Actions: ${action_list[*]}"
-    echo "Config: $CONFIG_FILE"
-    echo "----------------------------------------"
-    
-    local success_count=0
-    local failure_count=0
-    local -a failed_actions=()
-    
-    # Execute each action
-    for action in "${action_list[@]}"; do
-        case "$action" in
-            "build_host"|"build_target"|"run_host"|"clean")
-                if execute_command "$app" "$action"; then
-                    ((success_count++))
-                else
-                    ((failure_count++))
-                    failed_actions+=("$action")
-                fi
-                ;;
-            *)
-                echo "Error: Unknown action '$action'"
-                echo "Available actions: build_host, build_target, run_host, clean"
-                exit 1
-                ;;
-        esac
-    done
-    
-    echo "----------------------------------------"
-    echo "CI Execution Summary:"
-    echo "✅ Successful: $success_count"
-    if [[ $failure_count -gt 0 ]]; then
-        echo "❌ Failed: $failure_count"
-        echo "Failed actions: ${failed_actions[*]}"
+    echo ""
+    echo "========================================"
+    echo "CI Execution Summary (Parallel):"
+    echo "Apps processed: ${#matched_apps[@]}"
+    echo "✅ Successful operations: $total_success"
+    if [[ $total_failure -gt 0 ]]; then
+        echo "❌ Failed operations: $total_failure"
+        echo "Failed applications:"
+        for failed_app in "${failed_apps[@]}"; do
+            echo "  - $failed_app"
+        done
         exit 1
     else
-        echo "🎉 All actions completed successfully"
+        echo "🎉 All operations completed successfully"
         exit 0
     fi
+}
+
+# Function to match applications using fuzzy patterns
+match_apps_fuzzy() {
+    local pattern="$1"
+    local -a matched_apps=()
+    
+    # Split comma-separated patterns
+    IFS=',' read -ra patterns <<< "$pattern"
+    
+    for pat in "${patterns[@]}"; do
+        # Trim whitespace
+        pat=$(echo "$pat" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        
+        for app in "${APPS[@]}"; do
+            # Check if already matched
+            local already_matched=false
+            for matched in "${matched_apps[@]}"; do
+                if [[ "$matched" == "$app" ]]; then
+                    already_matched=true
+                    break
+                fi
+            done
+            
+            if [[ "$already_matched" == "false" ]]; then
+                # Support different matching patterns
+                if [[ "$pat" == "$app" ]]; then
+                    # Exact match
+                    matched_apps+=("$app")
+                elif [[ "$pat" == *"*"* ]]; then
+                    # Wildcard pattern matching
+                    if [[ "$app" == $pat ]]; then
+                        matched_apps+=("$app")
+                    fi
+                elif [[ "${app,,}" == *"${pat,,}"* ]]; then
+                    # Case-insensitive substring match
+                    matched_apps+=("$app")
+                fi
+            fi
+        done
+    done
+    
+    printf '%s\n' "${matched_apps[@]}"
+}
+
+# Function to match actions using fuzzy patterns
+match_actions_fuzzy() {
+    local pattern="$1"
+    local app="$2"
+    local -a matched_actions=()
+    local -a available_actions=()
+    
+    # Get available actions for this app
+    [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && available_actions+=("build_host")
+    [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && available_actions+=("build_target")
+    [[ -n "${APP_RUN_HOST[$app]:-}" ]] && available_actions+=("run_host")
+    [[ -n "${APP_CLEAN[$app]:-}" ]] && available_actions+=("clean")
+    
+    if [[ "$pattern" == "all" ]]; then
+        # Return only build actions for "all"
+        for action in "${available_actions[@]}"; do
+            if [[ "$action" == "build_host" || "$action" == "build_target" ]]; then
+                matched_actions+=("$action")
+            fi
+        done
+    else
+        # Split comma-separated patterns
+        IFS=',' read -ra patterns <<< "$pattern"
+        
+        for pat in "${patterns[@]}"; do
+            # Trim whitespace
+            pat=$(echo "$pat" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            
+            for action in "${available_actions[@]}"; do
+                # Check if already matched
+                local already_matched=false
+                for matched in "${matched_actions[@]}"; do
+                    if [[ "$matched" == "$action" ]]; then
+                        already_matched=true
+                        break
+                    fi
+                done
+                
+                if [[ "$already_matched" == "false" ]]; then
+                    # Support different matching patterns
+                    if [[ "$pat" == "$action" ]]; then
+                        # Exact match
+                        matched_actions+=("$action")
+                    elif [[ "$pat" == *"*"* ]]; then
+                        # Wildcard pattern matching
+                        if [[ "$action" == $pat ]]; then
+                            matched_actions+=("$action")
+                        fi
+                    elif [[ "${action,,}" == *"${pat,,}"* ]]; then
+                        # Case-insensitive substring match
+                        matched_actions+=("$action")
+                    fi
+                fi
+            done
+        done
+    fi
+    
+    printf '%s\n' "${matched_actions[@]}"
 }
 
 # Main function

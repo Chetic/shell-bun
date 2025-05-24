@@ -35,6 +35,8 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 - **Batch Operations**: Execute multiple actions in sequence
 - **Error Handling**: Clear error messages and failure reporting
 - **Structured Output**: CI-friendly logging format
+- **Parallel Processing**: Multiple applications execute simultaneously for maximum speed
+- **Pattern Matching**: Fuzzy matching with wildcards and substrings
 
 ### Perfect for DevOps
 - **Standardize Builds**: Same build commands across development and CI
@@ -42,6 +44,7 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 - **No Installation**: Works immediately on any CI runner with bash
 - **Flexible Configuration**: Different configs for dev, staging, production
 - **Debug Support**: Enhanced logging for troubleshooting build issues
+- **High Performance**: Parallel execution reduces build times significantly
 
 ## Usage
 
@@ -65,11 +68,13 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 ./shell-bun.sh --ci APIServer build_host,run_host
 ```
 
-**Available Actions for CI Mode:**
-- `build_host` - Build for host platform
-- `build_target` - Build for target platform  
-- `run_host` - Run on host platform
-- `clean` - Clean build artifacts
+**Fuzzy Pattern Matching:**
+Shell-Bun supports powerful pattern matching for both applications and actions in CI mode:
+
+```bash
+# Wildcard patterns  
+./shell-bun.sh --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
+```
 
 **CI Mode Features:**
 - ✅ **Zero user interaction** - perfect for automated pipelines
@@ -78,6 +83,8 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 - ✅ **Error handling** - detailed error messages and failure reporting
 - ✅ **Multiple actions** - run several commands in sequence
 - ✅ **Flexible execution** - run specific actions or all available actions
+- ✅ **Parallel processing** - multiple applications run simultaneously for faster builds
+- ✅ **Fuzzy pattern matching** - powerful wildcards and substring matching
 
 ### On Windows
 
