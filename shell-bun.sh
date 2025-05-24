@@ -2,7 +2,7 @@
 
 #
 # Shell-Bun - Interactive build environment script
-# Version: 0.0
+# Version: 1.0
 # Copyright (c) 2025, Fredrik Reveny
 # All rights reserved.
 #
@@ -33,7 +33,7 @@
 #
 
 # Version information
-VERSION="0.0"
+VERSION="1.0"
 
 # Shell-Bun - Interactive build environment script
 # Usage: ./shell-bun.sh [config-file]
