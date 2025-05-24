@@ -200,4 +200,6 @@ clean=cargo clean
 
 ## License
 
-This script is provided as-is for educational and development purposes. 
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 Fredrik Reveny 
