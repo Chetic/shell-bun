@@ -416,6 +416,12 @@ show_unified_menu() {
             local suffix=""
             local is_currently_selected=false
             local is_highlighted=false
+            local is_show_details=false
+            
+            # Check if this is a "Show Details" item
+            if [[ "$item" =~ -\ Show\ Details$ ]]; then
+                is_show_details=true
+            fi
             
             # Check if selected for execution
             if is_selected "$item"; then
@@ -430,12 +436,21 @@ show_unified_menu() {
             fi
             
             # Display with appropriate colors
-            if [[ "$is_currently_selected" == "true" ]]; then
-                # Selected items: entire line in green
+            if [[ "$is_currently_selected" == "true" && "$is_highlighted" == "true" ]]; then
+                # Selected AND highlighted: bold green with bright arrow
+                print_color "$BOLD$GREEN" "${prefix}${item}${suffix}"
+            elif [[ "$is_currently_selected" == "true" ]]; then
+                # Selected but not highlighted: green with checkmark
                 print_color "$GREEN" "${prefix}${item}${suffix}"
+            elif [[ "$is_highlighted" == "true" && "$is_show_details" == "true" ]]; then
+                # Highlighted "Show Details": purple/magenta with arrow
+                print_color "$PURPLE" "${prefix}${item}${suffix}"
             elif [[ "$is_highlighted" == "true" ]]; then
-                # Highlighted but not selected: green arrow and text
-                print_color "$GREEN" "${prefix}${item}${suffix}"
+                # Highlighted but not selected: cyan with arrow
+                print_color "$CYAN" "${prefix}${item}${suffix}"
+            elif [[ "$is_show_details" == "true" ]]; then
+                # "Show Details" items: dimmed when not highlighted
+                print_color "$DIM" "${prefix}${item}${suffix}"
             else
                 # Normal items: default color
                 echo "  ${item}${suffix}"
