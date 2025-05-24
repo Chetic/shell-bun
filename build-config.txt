@@ -1,0 +1,35 @@
+# Build Manager Configuration File
+# Format: [AppName] followed by key=value pairs
+# Available keys: build_host, build_target, run_host, clean
+
+[MyWebApp]
+build_host=sleep 2
+build_target=sleep 3
+run_host=sleep 2
+clean=sleep 1
+
+[DatabaseService]
+build_host=sleep 2
+run_host=sleep 3
+clean=sleep 1
+
+[MobileApp]
+build_host=sleep 2
+build_target=sleep 4
+clean=sleep 1
+
+[APIServer]
+build_host=sleep 3
+build_target=sleep 5
+run_host=sleep 2
+clean=sleep 1
+
+[Frontend]
+build_host=sleep 3
+run_host=sleep 2
+clean=sleep 1
+
+[TestSuite]
+build_host=sleep 2
+run_host=sleep 4
+clean=sleep 1 
