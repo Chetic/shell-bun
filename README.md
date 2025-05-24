@@ -25,10 +25,29 @@ An interactive bash script for managing build environments with advanced feature
 - **Color-coded Output**: Beautiful terminal interface with intuitive visual feedback
 - **No Dependencies**: Pure bash implementation with no external tools required
 
+## 🤖 CI/CD & Automation Ready
+
+Shell-Bun is designed for both interactive development and automated CI/CD pipelines:
+
+### Non-Interactive Mode
+- **Scriptable**: Run specific commands without user interaction
+- **Pipeline Friendly**: Proper exit codes (0 = success, 1 = failure)
+- **Batch Operations**: Execute multiple actions in sequence
+- **Error Handling**: Clear error messages and failure reporting
+- **Structured Output**: CI-friendly logging format
+
+### Perfect for DevOps
+- **Standardize Builds**: Same build commands across development and CI
+- **Version Control**: Check the script into your repository 
+- **No Installation**: Works immediately on any CI runner with bash
+- **Flexible Configuration**: Different configs for dev, staging, production
+- **Debug Support**: Enhanced logging for troubleshooting build issues
+
 ## Usage
 
 ### Running the Script
 
+#### Interactive Mode (Default)
 ```bash
 # Use default config file (shell-bun.cfg)
 ./shell-bun.sh
@@ -39,6 +58,26 @@ An interactive bash script for managing build environments with advanced feature
 # Enable debug mode (creates debug.log file)
 ./shell-bun.sh --debug
 ```
+
+#### Non-Interactive Mode (CI/CD)
+```bash
+# Run multiple actions for an application
+./shell-bun.sh --ci APIServer build_host,run_host
+```
+
+**Available Actions for CI Mode:**
+- `build_host` - Build for host platform
+- `build_target` - Build for target platform  
+- `run_host` - Run on host platform
+- `clean` - Clean build artifacts
+
+**CI Mode Features:**
+- ✅ **Zero user interaction** - perfect for automated pipelines
+- ✅ **Proper exit codes** - exits with 0 on success, 1 on failure
+- ✅ **Clear output** - structured logging suitable for CI systems
+- ✅ **Error handling** - detailed error messages and failure reporting
+- ✅ **Multiple actions** - run several commands in sequence
+- ✅ **Flexible execution** - run specific actions or all available actions
 
 ### On Windows
 
@@ -95,77 +134,3 @@ working_dir=~/projects/my-app
 - `run_host`: Commands to run the application on the host
 - `clean`: Commands to clean build artifacts
 - `working_dir`: Optional working directory where commands should be executed
-
-### Working Directory Support
-
-The `working_dir` field allows you to specify where commands should be executed:
-
-- **Absolute paths**: `/full/path/to/directory`
-- **Relative paths**: `../relative/path` (relative to script location)
-- **Tilde expansion**: `~/user/directory` (expands to home directory)
-- **Default behavior**: If not specified, commands run from the script's directory
-
-```ini
-[WebApp]
-build_host=npm run build
-working_dir=~/projects/my-webapp
-
-[BackendAPI]
-build_host=cargo build --release
-working_dir=../backend
-
-[LegacySystem]
-build_host=make all
-working_dir=/opt/legacy-app
-```
-
-### Example Configuration
-
-See `shell-bun.cfg` for a complete example with multiple applications using `sleep` commands for testing.
-
-## Command Execution
-
-### Single Command Execution
-1. Navigate to or filter for desired command
-2. Press Enter to execute immediately
-
-### Parallel Execution
-1. Use Space to select multiple commands (shows [✓] indicator)
-2. Press Enter when items are selected to run all simultaneously
-Commands execute in parallel in background processes
-
-## Built-in Status Messages
-
-Shell-Bun automatically provides status messages for all operations:
-
-```
-🚀 Starting: MyWebApp - Build (Host)
-✅ Completed: MyWebApp - Build (Host)
-❌ Failed: APIServer - Build (Target)
-
-📊 Execution Summary:
-✅ Successful: 4
-❌ Failed: 1
-Failed commands:
-  - APIServer - Build (Target)
-```
-
-## Advanced Features
-
-### Fuzzy Search
-Type any part of an application name or command to filter results instantly:
-- Type "web" to find "MyWebApp" items
-- Type "build" to show all build commands
-- Type "api host" to find "APIServer - Build (Host)"
-- Search is case-insensitive and matches anywhere in the text
-
-
-## Customization
-
-To create your own build environment:
-
-1. Copy `shell-bun.cfg` to a new file
-2. Replace the example applications with your actual projects
-3. Replace `sleep` commands with real build commands
-4. Optionally specify working directories for each application
-5. Run the script with your config file

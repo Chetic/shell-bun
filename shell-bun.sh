@@ -44,20 +44,70 @@ fi
 
 set -uo pipefail
 
-# Debug mode
+# Debug mode and CI mode
 DEBUG_MODE=0
+CI_MODE=0
+CI_APP=""
+CI_ACTIONS=""
 
-# Check for debug mode
-if [[ "${1:-}" == "--debug" ]] || [[ "${2:-}" == "--debug" ]]; then
-    DEBUG_MODE=1
-    if [[ "${1:-}" == "--debug" ]]; then
-        CONFIG_FILE="${2:-shell-bun.cfg}"
-    else
-        CONFIG_FILE="${1:-shell-bun.cfg}"
-    fi
-else
-    CONFIG_FILE="${1:-shell-bun.cfg}"
-fi
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --debug)
+            DEBUG_MODE=1
+            shift
+            ;;
+        --ci)
+            CI_MODE=1
+            shift
+            if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+                CI_APP="$1"
+                shift
+                if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+                    CI_ACTIONS="$1"
+                    shift
+                fi
+            fi
+            ;;
+        --help|-h)
+            echo "Shell-Bun - Interactive build environment script"
+            echo ""
+            echo "Usage:"
+            echo "  $0 [options] [config-file]"
+            echo ""
+            echo "Interactive mode (default):"
+            echo "  $0                          # Use default config (shell-bun.cfg)"
+            echo "  $0 my-config.txt           # Use custom config file"
+            echo "  $0 --debug                 # Enable debug logging"
+            echo ""
+            echo "Non-interactive mode (CI/CD):"
+            echo "  $0 --ci APP ACTION         # Run specific action for app"
+            echo "  $0 --ci APP ACTION1,ACTION2 # Run multiple actions"
+            echo "  $0 --ci APP all            # Run all available actions for app"
+            echo ""
+            echo "Available actions: build_host, build_target, run_host, clean"
+            echo ""
+            echo "Examples:"
+            echo "  $0 --ci MyWebApp build_host"
+            echo "  $0 --ci APIServer build_host,run_host"
+            echo "  $0 --ci Frontend all"
+            echo "  $0 --ci --debug MyApp build_host my-config.txt"
+            exit 0
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+        *)
+            CONFIG_FILE="$1"
+            shift
+            ;;
+    esac
+done
+
+# Set default config file if not specified
+CONFIG_FILE="${CONFIG_FILE:-shell-bun.cfg}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -889,18 +939,119 @@ show_unified_menu() {
     done
 }
 
-# Main function
-main() {
-    # Check if we're in a terminal that supports colors and arrow keys
-    if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
-        print_color "$RED" "Error: This script requires an interactive terminal"
+# Function to execute commands in CI mode (non-interactive)
+execute_ci_mode() {
+    local app="$1"
+    local actions="$2"
+    
+    # Check if app exists
+    local app_found=false
+    for existing_app in "${APPS[@]}"; do
+        if [[ "$existing_app" == "$app" ]]; then
+            app_found=true
+            break
+        fi
+    done
+    
+    if [[ "$app_found" == "false" ]]; then
+        echo "Error: Application '$app' not found in configuration"
+        echo "Available applications: ${APPS[*]}"
         exit 1
     fi
     
-
+    # Parse actions
+    local -a action_list=()
+    if [[ "$actions" == "all" ]]; then
+        # Add all available actions for this app
+        [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && action_list+=("build_host")
+        [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && action_list+=("build_target")
+        [[ -n "${APP_RUN_HOST[$app]:-}" ]] && action_list+=("run_host")
+        [[ -n "${APP_CLEAN[$app]:-}" ]] && action_list+=("clean")
+    else
+        # Split comma-separated actions
+        IFS=',' read -ra action_list <<< "$actions"
+    fi
     
+    if [[ ${#action_list[@]} -eq 0 ]]; then
+        echo "Error: No valid actions specified or available for '$app'"
+        echo "Available actions: build_host, build_target, run_host, clean"
+        exit 1
+    fi
+    
+    echo "Shell-Bun CI Mode: Executing $app"
+    echo "Actions: ${action_list[*]}"
+    echo "Config: $CONFIG_FILE"
+    echo "----------------------------------------"
+    
+    local success_count=0
+    local failure_count=0
+    local -a failed_actions=()
+    
+    # Execute each action
+    for action in "${action_list[@]}"; do
+        case "$action" in
+            "build_host"|"build_target"|"run_host"|"clean")
+                if execute_command "$app" "$action"; then
+                    ((success_count++))
+                else
+                    ((failure_count++))
+                    failed_actions+=("$action")
+                fi
+                ;;
+            *)
+                echo "Error: Unknown action '$action'"
+                echo "Available actions: build_host, build_target, run_host, clean"
+                exit 1
+                ;;
+        esac
+    done
+    
+    echo "----------------------------------------"
+    echo "CI Execution Summary:"
+    echo "✅ Successful: $success_count"
+    if [[ $failure_count -gt 0 ]]; then
+        echo "❌ Failed: $failure_count"
+        echo "Failed actions: ${failed_actions[*]}"
+        exit 1
+    else
+        echo "🎉 All actions completed successfully"
+        exit 0
+    fi
+}
+
+# Main function
+main() {
+    # Parse the configuration file first
     print_color "$BLUE" "Loading configuration from: $CONFIG_FILE"
     parse_config
+    
+    # Handle CI mode (non-interactive)
+    if [[ $CI_MODE -eq 1 ]]; then
+        if [[ -z "$CI_APP" ]]; then
+            echo "Error: Application name required for CI mode"
+            echo "Available applications: ${APPS[*]}"
+            echo "Use --help for usage information"
+            exit 1
+        fi
+        
+        if [[ -z "$CI_ACTIONS" ]]; then
+            echo "Error: Action(s) required for CI mode"
+            echo "Available actions: build_host, build_target, run_host, clean"
+            echo "Use --help for usage information"
+            exit 1
+        fi
+        
+        execute_ci_mode "$CI_APP" "$CI_ACTIONS"
+        # execute_ci_mode will exit the script
+    fi
+    
+    # Interactive mode - check if we're in a terminal that supports colors and arrow keys
+    if [[ ! -t 0 ]] || [[ ! -t 1 ]]; then
+        print_color "$RED" "Error: This script requires an interactive terminal for interactive mode"
+        print_color "$YELLOW" "Use --ci mode for non-interactive execution"
+        echo "Example: $0 --ci MyApp build_host"
+        exit 1
+    fi
     
     print_color "$GREEN" "Found ${#APPS[@]} applications"
     if [[ ${#APPS[@]} -gt 0 ]]; then
