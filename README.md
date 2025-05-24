@@ -1,5 +1,7 @@
 # Shell-Bun
 
+> ☕ **Shell-Bun** combines "build" and "run" - inspired by Swedish fika culture, where gathering for coffee and pastries (🍩🍰) creates the perfect environment for productive collaboration!
+
 An interactive bash script for managing build environments with advanced features and no external dependencies.
 
 ## Features
@@ -25,9 +27,6 @@ An interactive bash script for managing build environments with advanced feature
 
 # Enable debug mode (creates debug.log file)
 ./shell-bun.sh --debug
-
-# Debug mode with custom config
-./shell-bun.sh --debug my-config.txt
 ```
 
 ### On Windows
