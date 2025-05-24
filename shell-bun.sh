@@ -358,18 +358,31 @@ show_unified_menu() {
             local item="${filtered[$i]}"
             local prefix="  "
             local suffix=""
+            local is_currently_selected=false
+            local is_highlighted=false
             
             # Check if selected for execution
             if is_selected "$item"; then
-                suffix=" ${GREEN}[✓]${NC}"
+                suffix=" [✓]"
+                is_currently_selected=true
             fi
             
             # Check if currently highlighted
             if [[ $i -eq $selected ]] && [[ ${#filtered[@]} -gt 0 ]]; then
-                prefix="${GREEN}► "
+                prefix="► "
+                is_highlighted=true
+            fi
+            
+            # Display with appropriate colors
+            if [[ "$is_currently_selected" == "true" ]]; then
+                # Selected items: entire line in green
+                print_color "$GREEN" "${prefix}${item}${suffix}"
+            elif [[ "$is_highlighted" == "true" ]]; then
+                # Highlighted but not selected: green arrow and text
                 print_color "$GREEN" "${prefix}${item}${suffix}"
             else
-                echo -e "  ${item}${suffix}"
+                # Normal items: default color
+                echo "  ${item}${suffix}"
             fi
         done
         
@@ -377,14 +390,31 @@ show_unified_menu() {
             print_color "$RED" "No matches found"
         fi
         
-        # Read user input
-        read -rsn1 key 2>/dev/null || continue
+        # Read user input with enhanced key detection
+        unset key
+        IFS= read -rsn1 key 2>/dev/null || continue
+        
+        # Convert key to hex for better debugging
+        key_hex=$(printf '%02x' "'$key" 2>/dev/null || echo 'empty')
+        debug_log "Key hex value: $key_hex"
         
         # Debug logging
-        debug_log "Key pressed: '$key' (ASCII: $(printf '%d' "'$key" 2>/dev/null || echo 'N/A'))"
+        local ascii_val=$(printf '%d' "'$key" 2>/dev/null || echo 'N/A')
+        debug_log "Key pressed: '$key' (ASCII: $ascii_val)"
         debug_log "Current filter: '$filter'"
         debug_log "Selected items count: ${#SELECTED_ITEMS[@]}"
         
+        # Special debug for common problematic keys
+        case "$ascii_val" in
+            9) debug_log "Detected TAB character (ASCII 9)" ;;
+            10) debug_log "Detected LINE FEED (ASCII 10)" ;;
+            13) debug_log "Detected CARRIAGE RETURN (ASCII 13)" ;;
+            0) debug_log "Detected NULL character (ASCII 0)" ;;
+            32) debug_log "Detected SPACE character (ASCII 32)" ;;
+        esac
+        
+        # NOTE: Avoid using alphabet characters (a-z, A-Z) as hotkeys to prevent 
+        # conflicts with fuzzy search typing. Use symbols, function keys, or special keys instead.
         case "$key" in
             $'\x1b') # Escape key or arrow keys
                 debug_log "Detected ESC sequence"
@@ -426,8 +456,44 @@ show_unified_menu() {
                     debug_log "No filtered items available"
                 fi
                 ;;
-            '') # Enter key
-                debug_log "Enter key pressed"
+
+
+            ' ') # Space bar - toggle selection
+                debug_log "SPACE key pressed - toggling selection"
+                if [[ ${#filtered[@]} -gt 0 ]]; then
+                    local selection="${filtered[$selected]}"
+                    debug_log "Current selection: '$selection'"
+                    if [[ ! "$selection" =~ -\ Show\ Details$ ]]; then
+                        debug_log "Toggling selection for: '$selection'"
+                        toggle_selection "$selection"
+                        debug_log "After toggle, selected items: ${#SELECTED_ITEMS[@]}"
+                    else
+                        debug_log "Cannot select 'Show Details' item"
+                    fi
+                else
+                    debug_log "No filtered items available"
+                fi
+                ;;
+
+            '+') # Plus - select all
+                debug_log "Plus key pressed - selecting all"
+                select_all
+                ;;
+            '-') # Minus - clear selections
+                debug_log "Minus key pressed - clearing selections"
+                select_none
+                ;;
+            $'\x7f'|$'\x08') # Backspace
+                debug_log "Backspace pressed"
+                filter="${filter%?}"
+                selected=0
+                ;;
+            $'\t') # Tab key - run selected items
+                debug_log "TAB key pressed - running selected items"
+                execute_parallel
+                ;;
+            $'\n'|$'\r') # Enter key - execute highlighted item or run selected
+                debug_log "ENTER key pressed"
                 if [[ ${#filtered[@]} -gt 0 ]]; then
                     local selection="${filtered[$selected]}"
                     debug_log "Selected item: '$selection'"
@@ -473,48 +539,15 @@ show_unified_menu() {
                     fi
                 fi
                 ;;
-            ' ') # Space bar - toggle selection
-                debug_log "SPACE key pressed - toggling selection"
-                if [[ ${#filtered[@]} -gt 0 ]]; then
-                    local selection="${filtered[$selected]}"
-                    debug_log "Current selection: '$selection'"
-                    if [[ ! "$selection" =~ -\ Show\ Details$ ]]; then
-                        debug_log "Toggling selection for: '$selection'"
-                        toggle_selection "$selection"
-                        debug_log "After toggle, selected items: ${#SELECTED_ITEMS[@]}"
-                    else
-                        debug_log "Cannot select 'Show Details' item"
-                    fi
-                else
-                    debug_log "No filtered items available"
-                fi
-                ;;
-            $'\t') # Tab - run selected
-                debug_log "Tab key pressed - running selected"
-                execute_parallel
-                ;;
-            '+') # Plus - select all
-                debug_log "Plus key pressed - selecting all"
-                select_all
-                ;;
-            '-') # Minus - clear selections
-                debug_log "Minus key pressed - clearing selections"
-                select_none
-                ;;
-            $'\x7f'|$'\x08') # Backspace
-                debug_log "Backspace pressed"
-                filter="${filter%?}"
-                selected=0
-                ;;
             *) # Any other character - add to filter
-                debug_log "Other character: '$key'"
+                debug_log "Other character: '$key' (hex: $key_hex)"
                 # Only add printable characters (excluding our special keys)
-                if [[ "$key" =~ [[:print:]] && "$key" != " " && "$key" != "+" && "$key" != "-" && "$key" != $'\t' ]]; then
+                if [[ "$key" =~ [[:print:]] && "$key" != " " && "$key" != "+" && "$key" != "-" ]]; then
                     debug_log "Adding to filter: '$key'"
                     filter="$filter$key"
                     selected=0
                 else
-                    debug_log "Character excluded from filter"
+                    debug_log "Character excluded from filter: '$key'"
                 fi
                 ;;
         esac

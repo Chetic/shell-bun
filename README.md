@@ -50,7 +50,7 @@ bash shell-bun.sh
 - **'+'**: Select all actionable commands
 - **'-'**: Clear all selections
 - **Tab**: Run all selected commands in parallel
-- **Enter**: Run selected commands (if any selected), otherwise execute highlighted command
+- **Enter**: Execute highlighted command (or run selected commands if any selected)
 
 ### Visual Indicators
 - **Green ►**: Currently highlighted item
