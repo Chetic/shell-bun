@@ -2,6 +2,7 @@
 
 #
 # Shell-Bun - Interactive build environment script
+# Version: 0.0
 # Copyright (c) 2025, Fredrik Reveny
 # All rights reserved.
 #
@@ -30,6 +31,9 @@
 # OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
+
+# Version information
+VERSION="0.0"
 
 # Shell-Bun - Interactive build environment script
 # Usage: ./shell-bun.sh [config-file]
@@ -70,7 +74,8 @@ while [[ $# -gt 0 ]]; do
             fi
             ;;
         --help|-h)
-            echo "Shell-Bun - Interactive build environment script"
+            echo "Shell-Bun v$VERSION - Interactive build environment script"
+            echo "Copyright (c) 2025, Fredrik Reveny"
             echo ""
             echo "Usage:"
             echo "  $0 [options] [config-file]"
@@ -106,6 +111,10 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 --ci \"API*,Frontend\" all        # Build API and Frontend apps"
             echo "  $0 --ci mobile build_host,run_host   # Multiple actions for mobile apps"
             echo "  $0 --ci \"*\" build_target my.cfg    # Build all apps for target with custom config"
+            exit 0
+            ;;
+        --version|-v)
+            echo "v$VERSION"
             exit 0
             ;;
         -*)

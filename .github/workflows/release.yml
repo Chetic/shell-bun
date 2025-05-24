@@ -1,0 +1,163 @@
+name: Release Shell-Bun
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version increment type'
+        required: true
+        default: 'minor'
+        type: choice
+        options:
+        - minor
+        - major
+        - patch
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+    - name: Get current version
+      id: current_version
+      run: |
+        CURRENT_VERSION=$(grep "^VERSION=" shell-bun.sh | cut -d'"' -f2)
+        echo "current=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+        echo "Current version: $CURRENT_VERSION"
+        
+    - name: Calculate new version
+      id: new_version
+      run: |
+        CURRENT="${{ steps.current_version.outputs.current }}"
+        
+        # Split version into components
+        IFS='.' read -ra VERSION_PARTS <<< "$CURRENT"
+        MAJOR=${VERSION_PARTS[0]:-1}
+        MINOR=${VERSION_PARTS[1]:-0}
+        PATCH=${VERSION_PARTS[2]:-0}
+        
+        # Increment based on input
+        case "${{ github.event.inputs.version_type }}" in
+          major)
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+            ;;
+          minor)
+            MINOR=$((MINOR + 1))
+            PATCH=0
+            ;;
+          patch)
+            PATCH=$((PATCH + 1))
+            ;;
+        esac
+        
+        NEW_VERSION="$MAJOR.$MINOR"
+        if [ "$PATCH" != "0" ]; then
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+        fi
+        
+        echo "new=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "New version: $NEW_VERSION"
+        
+    - name: Update version in script
+      run: |
+        NEW_VERSION="${{ steps.new_version.outputs.new }}"
+        
+        # Update version in script header comment
+        sed -i "s/^# Version: .*/# Version: $NEW_VERSION/" shell-bun.sh
+        
+        # Update VERSION variable
+        sed -i "s/^VERSION=.*/VERSION=\"$NEW_VERSION\"/" shell-bun.sh
+        
+        echo "Updated version to $NEW_VERSION in shell-bun.sh"
+        
+    - name: Create release assets
+      run: |
+        NEW_VERSION="${{ steps.new_version.outputs.new }}"
+        
+        # Create release directory
+        mkdir -p release
+        
+        # Copy main script
+        cp shell-bun.sh release/
+        cp shell-bun.cfg release/
+        cp README.md release/
+        cp LICENSE release/
+        
+        # Create standalone archive
+        cd release
+        tar -czf "../shell-bun-v${NEW_VERSION}.tar.gz" *
+        cd ..
+        
+        # Create checksums
+        sha256sum "shell-bun-v${NEW_VERSION}.tar.gz" > "shell-bun-v${NEW_VERSION}.sha256"
+        
+    - name: Commit version update
+      run: |
+        NEW_VERSION="${{ steps.new_version.outputs.new }}"
+        git add shell-bun.sh
+        git commit -m "Bump version to v$NEW_VERSION"
+        git push
+        
+    - name: Create Git tag
+      run: |
+        NEW_VERSION="${{ steps.new_version.outputs.new }}"
+        git tag -a "v$NEW_VERSION" -m "Release v$NEW_VERSION"
+        git push origin "v$NEW_VERSION"
+        
+    - name: Generate changelog
+      id: changelog
+      run: |
+        NEW_VERSION="${{ steps.new_version.outputs.new }}"
+        CURRENT_VERSION="${{ steps.current_version.outputs.current }}"
+        
+        # Generate changelog from commits
+        CHANGELOG="## What's Changed"$'\n'$'\n'
+        
+        # Get commits since last version tag (if exists)
+        if git rev-parse "v$CURRENT_VERSION" >/dev/null 2>&1; then
+          COMMITS=$(git log "v$CURRENT_VERSION"..HEAD --oneline --pretty=format:"- %s (%h)")
+        else
+          COMMITS=$(git log --oneline --pretty=format:"- %s (%h)" -10)
+        fi
+        
+        if [ -n "$COMMITS" ]; then
+          CHANGELOG="${CHANGELOG}"$'\n'"${COMMITS}"$'\n'$'\n'
+        else
+          CHANGELOG="${CHANGELOG}"$'\n'"- Version bump and maintenance updates"$'\n'$'\n'
+        fi
+        
+        CHANGELOG="${CHANGELOG}**Full Changelog**: https://github.com/${{ github.repository }}/compare/v$CURRENT_VERSION...v$NEW_VERSION"
+        
+        # Save changelog to file for the release
+        echo "$CHANGELOG" > RELEASE_NOTES.md
+        
+        echo "Generated changelog for v$NEW_VERSION"
+        
+    - name: Create GitHub Release with Assets
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v${{ steps.new_version.outputs.new }}
+        name: Shell-Bun v${{ steps.new_version.outputs.new }}
+        body_path: RELEASE_NOTES.md
+        draft: false
+        prerelease: false
+        files: |
+          shell-bun-v${{ steps.new_version.outputs.new }}.tar.gz
+          shell-bun-v${{ steps.new_version.outputs.new }}.sha256
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
