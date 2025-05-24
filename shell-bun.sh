@@ -358,6 +358,9 @@ show_unified_menu() {
     local -a menu_items=()
     local selected=0
     local filter=""
+    local prev_filter=""
+    local first_draw=true
+    local need_full_clear=false
     
     # Build menu items
     for app in "${APPS[@]}"; do
@@ -368,8 +371,29 @@ show_unified_menu() {
         menu_items+=("$app - Show Details")
     done
     
+    # Hide cursor to prevent flickering
+    printf '\033[?25l'
+    
+    # Ensure cursor is shown on exit
+    trap 'printf "\033[?25h"' EXIT
+    
     while true; do
-        clear
+        # Check if we need a full clear (only for major changes, not filter typing)
+        if [[ "$first_draw" == "true" ]] || [[ "$need_full_clear" == "true" ]]; then
+            clear
+            first_draw=false
+            need_full_clear=false
+        else
+            # Move cursor to home position (top-left corner)
+            printf '\033[H'
+        fi
+        
+        # Track if filter changed for content clearing
+        local filter_changed=false
+        if [[ "$filter" != "$prev_filter" ]]; then
+            filter_changed=true
+        fi
+        prev_filter="$filter"
         print_color "$BLUE" "╔════════════════════════════════════════════════╗"
         print_color "$BLUE" "║           Shell-Bun by Fredrik Reveny          ║"
         print_color "$BLUE" "╚════════════════════════════════════════════════╝"
@@ -377,6 +401,11 @@ show_unified_menu() {
         print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: jump 10 lines | Type: filter | Space: select | Enter: execute | ESC: quit"
         print_color "$CYAN" "Shortcuts: '+': select all | '-': clear selections | Enter: run current or selected"
         echo
+        
+        # Clear content area if filter changed (but not full screen to avoid flicker)
+        if [[ "$filter_changed" == "true" ]]; then
+            printf '\033[J'  # Clear from cursor to end of screen
+        fi
         
         if [[ -n "$filter" ]]; then
             print_color "$YELLOW" "Filter: $filter"
@@ -460,6 +489,9 @@ show_unified_menu() {
         if [[ ${#filtered[@]} -eq 0 ]]; then
             print_color "$RED" "No matches found"
         fi
+        
+        # Clear any remaining lines from previous draws to prevent artifacts
+        printf '\033[J'
         
         # Read user input with enhanced key detection
         unset key
@@ -559,6 +591,9 @@ show_unified_menu() {
                 else
                     # Plain ESC key or unknown sequence - quit
                     debug_log "ESC key pressed - quitting"
+                    # Clear screen and restore cursor before exiting
+                    printf '\033[?25h'  # Show cursor
+                    clear
                     print_color "$YELLOW" "Goodbye!"
                     exit 0
                 fi
@@ -576,11 +611,13 @@ show_unified_menu() {
                         show_app_details "$app"
                         echo "Press Enter to continue..."
                         read
+                        need_full_clear=true
                     else
                         # Check if there are selected items
                         if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
                             debug_log "Running selected items (${#SELECTED_ITEMS[@]} items)"
                             execute_parallel
+                            need_full_clear=true
                         else
                             # No selections - execute the currently highlighted command
                             debug_log "No selections - executing highlighted command with summary"
@@ -602,6 +639,7 @@ show_unified_menu() {
                                         execute_single "$app" "$action" "clean"
                                         ;;
                                 esac
+                                need_full_clear=true
                             fi
                         fi
                     fi
@@ -637,11 +675,13 @@ show_unified_menu() {
                         show_app_details "$app"
                         echo "Press Enter to continue..."
                         read
+                        need_full_clear=true
                     else
                         # Check if there are selected items
                         if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
                             debug_log "Running selected items (${#SELECTED_ITEMS[@]} items)"
                             execute_parallel
+                            need_full_clear=true
                         else
                             # No selections - execute the currently highlighted command
                             debug_log "No selections - executing highlighted command with summary"
@@ -663,6 +703,7 @@ show_unified_menu() {
                                         execute_single "$app" "$action" "clean"
                                         ;;
                                 esac
+                                need_full_clear=true
                             fi
                         fi
                     fi
@@ -677,6 +718,7 @@ show_unified_menu() {
             '-') # Minus - clear selections
                 debug_log "Minus key pressed - clearing selections"
                 select_none
+                need_full_clear=true
                 action_taken=true
                 ;;
             $'\x7f'|$'\x08') # Backspace
