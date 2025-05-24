@@ -3,7 +3,7 @@
 # Available keys: build_host, build_target, run_host, clean
 
 [MyWebApp]
-build_host=sleep 2
+build_host=echo Doing something && sleep 1 && echo Failed at something >&2 && exit 1
 build_target=sleep 3
 run_host=sleep 2
 clean=sleep 1

@@ -172,12 +172,22 @@ execute_command() {
     
     log_execution "$app" "$action_name" "start"
     
-    # Execute the command
-    if eval "$command" >/dev/null 2>&1; then
+    # Execute the command in a subshell to prevent exit from affecting the main script
+    # Capture both stdout and stderr for error reporting
+    local output
+    local exit_code
+    output=$(bash -c "$command" 2>&1)
+    exit_code=$?
+    
+    if [[ $exit_code -eq 0 ]]; then
         log_execution "$app" "$action_name" "success"
         return 0
     else
         log_execution "$app" "$action_name" "error"
+        print_color "$RED" "Command failed with exit code $exit_code"
+        if [[ -n "$output" && $DEBUG_MODE -eq 1 ]]; then
+            print_color "$RED" "Error output: $output"
+        fi
         return 1
     fi
 }
@@ -217,6 +227,7 @@ execute_single() {
 execute_parallel() {
     local -a pids=()
     local -a commands=()
+    local -a command_names=()
     local total=${#SELECTED_ITEMS[@]}
     
     if [[ $total -eq 0 ]]; then
@@ -251,18 +262,23 @@ execute_parallel() {
                     ;;
             esac
             pids+=($!)
+            command_names+=("$item")
         fi
     done
     
-    # Wait for all background processes
+    # Wait for all background processes and track which ones failed
     local success_count=0
     local failure_count=0
+    local -a failed_commands=()
     
-    for pid in "${pids[@]}"; do
+    for i in "${!pids[@]}"; do
+        local pid="${pids[$i]}"
+        local cmd_name="${command_names[$i]}"
         if wait "$pid"; then
             ((success_count++))
         else
             ((failure_count++))
+            failed_commands+=("$cmd_name")
         fi
     done
     
@@ -271,6 +287,12 @@ execute_parallel() {
     print_color "$GREEN" "✅ Successful: $success_count"
     if [[ $failure_count -gt 0 ]]; then
         print_color "$RED" "❌ Failed: $failure_count"
+        if [[ ${#failed_commands[@]} -gt 0 ]]; then
+            print_color "$RED" "Failed commands:"
+            for failed_cmd in "${failed_commands[@]}"; do
+                print_color "$RED" "  - $failed_cmd"
+            done
+        fi
     fi
     echo
     echo "Press Enter to continue..."
