@@ -370,12 +370,12 @@ show_unified_menu() {
     
     while true; do
         clear
-        print_color "$BLUE" "╔══════════════════════════════════════════╗"
-        print_color "$BLUE" "║                Shell-Bun                 ║"
-        print_color "$BLUE" "╚══════════════════════════════════════════╝"
+        print_color "$BLUE" "╔════════════════════════════════════════════════╗"
+        print_color "$BLUE" "║           Shell-Bun by Fredrik Reveny          ║"
+        print_color "$BLUE" "╚════════════════════════════════════════════════╝"
         echo
         print_color "$CYAN" "Navigation: ↑/↓ arrows | Type: filter | Space: select | Enter: execute | ESC: quit"
-        print_color "$CYAN" "Shortcuts: '+': select all | '-': clear selections | Tab: run selected"
+        print_color "$CYAN" "Shortcuts: '+': select all | '-': clear selections | Enter: run current or selected"
         echo
         
         if [[ -n "$filter" ]]; then
@@ -536,26 +536,32 @@ show_unified_menu() {
                         echo "Press Enter to continue..."
                         read
                     else
-                        # Always execute the currently highlighted command (ignore selections)
-                        debug_log "Executing highlighted command with summary (Enter always executes current item)"
-                        if [[ "$selection" =~ ^(.+)\ -\ (.+)$ ]]; then
-                            local app="${BASH_REMATCH[1]}"
-                            local action="${BASH_REMATCH[2]}"
-                            
-                            case "$action" in
-                                "Build (Host)")
-                                    execute_single "$app" "$action" "build_host"
-                                    ;;
-                                "Build (Target)")
-                                    execute_single "$app" "$action" "build_target"
-                                    ;;
-                                "Run (Host)")
-                                    execute_single "$app" "$action" "run_host"
-                                    ;;
-                                "Clean")
-                                    execute_single "$app" "$action" "clean"
-                                    ;;
-                            esac
+                        # Check if there are selected items
+                        if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
+                            debug_log "Running selected items (${#SELECTED_ITEMS[@]} items)"
+                            execute_parallel
+                        else
+                            # No selections - execute the currently highlighted command
+                            debug_log "No selections - executing highlighted command with summary"
+                            if [[ "$selection" =~ ^(.+)\ -\ (.+)$ ]]; then
+                                local app="${BASH_REMATCH[1]}"
+                                local action="${BASH_REMATCH[2]}"
+                                
+                                case "$action" in
+                                    "Build (Host)")
+                                        execute_single "$app" "$action" "build_host"
+                                        ;;
+                                    "Build (Target)")
+                                        execute_single "$app" "$action" "build_target"
+                                        ;;
+                                    "Run (Host)")
+                                        execute_single "$app" "$action" "run_host"
+                                        ;;
+                                    "Clean")
+                                        execute_single "$app" "$action" "clean"
+                                        ;;
+                                esac
+                            fi
                         fi
                     fi
                 fi
@@ -578,7 +584,7 @@ show_unified_menu() {
                 fi
                 action_taken=true
                 ;;
-            $'\n'|$'\r') # Enter key - execute highlighted item only
+            $'\n'|$'\r') # Enter key - execute highlighted item or selected items
                 debug_log "Real ENTER character detected"
                 if [[ ${#filtered[@]} -gt 0 ]]; then
                     local selection="${filtered[$selected]}"
@@ -591,26 +597,32 @@ show_unified_menu() {
                         echo "Press Enter to continue..."
                         read
                     else
-                        # Always execute the currently highlighted command (ignore selections)
-                        debug_log "Executing highlighted command with summary (Enter always executes current item)"
-                        if [[ "$selection" =~ ^(.+)\ -\ (.+)$ ]]; then
-                            local app="${BASH_REMATCH[1]}"
-                            local action="${BASH_REMATCH[2]}"
-                            
-                            case "$action" in
-                                "Build (Host)")
-                                    execute_single "$app" "$action" "build_host"
-                                    ;;
-                                "Build (Target)")
-                                    execute_single "$app" "$action" "build_target"
-                                    ;;
-                                "Run (Host)")
-                                    execute_single "$app" "$action" "run_host"
-                                    ;;
-                                "Clean")
-                                    execute_single "$app" "$action" "clean"
-                                    ;;
-                            esac
+                        # Check if there are selected items
+                        if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
+                            debug_log "Running selected items (${#SELECTED_ITEMS[@]} items)"
+                            execute_parallel
+                        else
+                            # No selections - execute the currently highlighted command
+                            debug_log "No selections - executing highlighted command with summary"
+                            if [[ "$selection" =~ ^(.+)\ -\ (.+)$ ]]; then
+                                local app="${BASH_REMATCH[1]}"
+                                local action="${BASH_REMATCH[2]}"
+                                
+                                case "$action" in
+                                    "Build (Host)")
+                                        execute_single "$app" "$action" "build_host"
+                                        ;;
+                                    "Build (Target)")
+                                        execute_single "$app" "$action" "build_target"
+                                        ;;
+                                    "Run (Host)")
+                                        execute_single "$app" "$action" "run_host"
+                                        ;;
+                                    "Clean")
+                                        execute_single "$app" "$action" "clean"
+                                        ;;
+                                esac
+                            fi
                         fi
                     fi
                 fi
@@ -632,11 +644,7 @@ show_unified_menu() {
                 selected=0
                 action_taken=true
                 ;;
-            $'\t') # Tab key - run selected items
-                debug_log "TAB key pressed - running selected items"
-                execute_parallel
-                action_taken=true
-                ;;
+
 
         esac
         
