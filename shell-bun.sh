@@ -374,7 +374,7 @@ show_unified_menu() {
         print_color "$BLUE" "║           Shell-Bun by Fredrik Reveny          ║"
         print_color "$BLUE" "╚════════════════════════════════════════════════╝"
         echo
-        print_color "$CYAN" "Navigation: ↑/↓ arrows | Type: filter | Space: select | Enter: execute | ESC: quit"
+        print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: jump 10 lines | Type: filter | Space: select | Enter: execute | ESC: quit"
         print_color "$CYAN" "Shortcuts: '+': select all | '-': clear selections | Enter: run current or selected"
         echo
         
@@ -514,6 +514,32 @@ show_unified_menu() {
                     debug_log "Down arrow pressed"
                     if [[ $selected -lt $((${#filtered[@]} - 1)) ]] && [[ ${#filtered[@]} -gt 0 ]]; then
                         ((selected++))
+                    fi
+                elif [[ "$arrows" == "[5" ]]; then
+                    # Page Up - read the final ~ character
+                    read -rsn1 -t 0.1 final_char 2>/dev/null
+                    if [[ "$final_char" == "~" ]]; then
+                        debug_log "Page Up pressed"
+                        # Jump up by 10 lines
+                        new_selected=$((selected - 10))
+                        if [[ $new_selected -lt 0 ]]; then
+                            selected=0
+                        else
+                            selected=$new_selected
+                        fi
+                    fi
+                elif [[ "$arrows" == "[6" ]]; then
+                    # Page Down - read the final ~ character
+                    read -rsn1 -t 0.1 final_char 2>/dev/null
+                    if [[ "$final_char" == "~" ]]; then
+                        debug_log "Page Down pressed"
+                        # Jump down by 10 lines
+                        new_selected=$((selected + 10))
+                        if [[ $new_selected -ge ${#filtered[@]} ]] && [[ ${#filtered[@]} -gt 0 ]]; then
+                            selected=$((${#filtered[@]} - 1))
+                        else
+                            selected=$new_selected
+                        fi
                     fi
                 else
                     # Plain ESC key or unknown sequence - quit
