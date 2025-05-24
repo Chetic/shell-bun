@@ -44,12 +44,13 @@ bash shell-bun.sh
 - **Type**: Filter commands in real-time (fuzzy search)
 - **Space**: Toggle selection of current item
 - **Enter**: Execute highlighted command immediately
-- **'q'**: Quit the application
+- **ESC**: Quit the application
 
 ### Batch Operations
-- **'a'**: Select all actionable commands
-- **'n'**: Clear all selections
-- **'r'**: Run all selected commands in parallel
+- **'+'**: Select all actionable commands
+- **'-'**: Clear all selections
+- **Tab**: Run all selected commands in parallel
+- **Enter**: Run selected commands (if any selected), otherwise execute highlighted command
 
 ### Visual Indicators
 - **Green ►**: Currently highlighted item
@@ -108,7 +109,7 @@ The included `build-config.txt` contains example applications:
 
 ### Parallel Execution
 1. Use Space to select multiple commands
-2. Press 'r' to run all selected commands
+2. Press Tab (or Enter when items selected) to run all selected commands
 3. Commands execute simultaneously in background
 4. Execution summary with success/failure counts
 
