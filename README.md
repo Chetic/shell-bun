@@ -22,13 +22,19 @@ An interactive bash script for managing build environments with advanced feature
 
 # Use custom config file
 ./shell-bun.sh my-config.txt
+
+# Enable debug mode (creates debug.log file)
+./shell-bun.sh --debug
+
+# Debug mode with custom config
+./shell-bun.sh --debug my-config.txt
 ```
 
 ### On Windows
 
 Since this is a bash script, you'll need to run it in a bash environment like:
 - Git Bash
-- WSL (Windows Subsystem for Linux)
+- WSL (Windows Subsystem for Linux) 
 - Cygwin
 - MSYS2
 
@@ -39,18 +45,18 @@ bash shell-bun.sh
 
 ## Interactive Controls
 
-### Navigation & Selection
+### Navigation
 - **↑/↓ Arrow Keys**: Navigate through filtered options
-- **Type**: Filter commands in real-time (fuzzy search)
-- **Space**: Toggle selection of current item
-- **Enter**: Execute highlighted command immediately
+- **Page Up/Page Down**: Jump 10 lines up/down for faster navigation
+- **Type any character**: Filter commands in real-time (fuzzy search)
+- **Backspace**: Remove characters from filter
 - **ESC**: Quit the application
 
-### Batch Operations
+### Selection & Execution
+- **Space**: Toggle selection of current item for batch execution
+- **Enter**: Execute highlighted command OR run all selected commands (if any selected)
 - **'+'**: Select all actionable commands
 - **'-'**: Clear all selections
-- **Tab**: Run all selected commands in parallel
-- **Enter**: Execute highlighted command (or run selected commands if any selected)
 
 ### Visual Indicators
 - **Green ►**: Currently highlighted item
@@ -104,14 +110,14 @@ The included `build-config.txt` contains example applications:
 ### Single Command Execution
 1. Navigate to or filter for desired command
 2. Press Enter to execute immediately
-3. Confirmation prompt before execution
-4. Real-time status updates with emojis
+3. Real-time status updates with emojis
+4. Execution summary with success/failure status
 
 ### Parallel Execution
-1. Use Space to select multiple commands
-2. Press Tab (or Enter when items selected) to run all selected commands
-3. Commands execute simultaneously in background
-4. Execution summary with success/failure counts
+1. Use Space to select multiple commands (shows [✓] indicator)
+2. Press Enter when items are selected to run all simultaneously
+3. Commands execute in parallel in background processes
+4. Detailed execution summary with individual success/failure tracking
 
 ## Built-in Status Messages
 
@@ -125,34 +131,64 @@ Shell-Bun automatically provides status messages for all operations:
 📊 Execution Summary:
 ✅ Successful: 4
 ❌ Failed: 1
+Failed commands:
+  - APIServer - Build (Target)
 ```
 
 ## Advanced Features
 
 ### Fuzzy Search
-Type any part of an application name or command to filter results:
+Type any part of an application name or command to filter results instantly:
 - Type "web" to find "MyWebApp" items
 - Type "build" to show all build commands
 - Type "api host" to find "APIServer - Build (Host)"
+- Search is case-insensitive and matches anywhere in the text
 
-### Smart Selection
-- Selection persists across filtering
+### Smart Selection Management
+- Selection persists across filtering operations
 - Can't select "Show Details" items for execution
-- Visual feedback for all selected items
+- Visual feedback for all selected items with [✓] markers
+- Clear selection status display
+
+### Enhanced Navigation
+- Page Up/Page Down for quick navigation through long lists
+- Arrow keys for precise navigation
+- Filter state preserved during navigation
 
 ### Parallel Processing
-- Multiple commands run simultaneously
+- Multiple commands run simultaneously in background
 - Individual status tracking for each command
-- Overall execution summary
+- Overall execution summary with detailed failure reporting
 - Non-blocking interface during execution
+
+### Debug Mode
+Enable debug mode for troubleshooting:
+```bash
+./shell-bun.sh --debug
+```
+
+Debug mode features:
+- Creates `debug.log` file with detailed execution logs
+- Enhanced error output display
+- Key press analysis for terminal compatibility issues
+- Detailed command execution tracking
 
 ## Safety Features
 
 - Commands are displayed before execution
-- User confirmation required for single commands
+- User-friendly execution summaries
 - Exit codes are captured and displayed
-- Ctrl+C can be used to cancel at any time
 - Failed commands don't affect other parallel executions
+- Ctrl+C can be used to cancel operations
+- Error output captured and optionally displayed in debug mode
+
+## Terminal Compatibility
+
+Shell-Bun includes enhanced compatibility features:
+- **WSL Support**: Special handling for Windows Subsystem for Linux key detection
+- **Various Terminal Types**: Works with Git Bash, standard bash, zsh, etc.
+- **Key Detection**: Advanced key sequence detection for arrow keys, page up/down
+- **Color Support**: Automatic color detection and fallback
 
 ## Customization
 
@@ -185,17 +221,18 @@ clean=cargo clean
 
 ## Performance
 
-- Instant filtering and navigation
+- Instant filtering and navigation response
 - Non-blocking parallel execution
 - Minimal resource usage
-- Works efficiently with dozens of applications
+- Efficiently handles dozens of applications
+- Background process management for parallel commands
 
 ## Troubleshooting
 
+### Common Issues
 - **Script not executable**: Use `bash shell-bun.sh` instead of `./shell-bun.sh`
 - **Colors not working**: Your terminal may not support ANSI colors
 - **Arrow keys not working**: Ensure you're in a proper bash terminal
-- **Parallel execution issues**: Check if your commands conflict with each other
 - **Config file not found**: Check the file path and permissions
 
 ## License
