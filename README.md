@@ -19,7 +19,7 @@ An interactive bash script for managing build environments with advanced feature
 ### Running the Script
 
 ```bash
-# Use default config file (build-config.txt)
+# Use default config file (shell-bun.cfg)
 ./shell-bun.sh
 
 # Use custom config file
@@ -91,11 +91,11 @@ clean=make clean
 
 ### Example Configuration
 
-See `build-config.txt` for a complete example with multiple applications using `sleep` commands for testing.
+See `shell-bun.cfg` for a complete example with multiple applications using `sleep` commands for testing.
 
 ## Sample Applications
 
-The included `build-config.txt` contains example applications:
+The included `shell-bun.cfg` contains example applications:
 
 - **MyWebApp**: Web application with host/target builds
 - **DatabaseService**: Database service with host build and run
@@ -193,7 +193,7 @@ Shell-Bun includes enhanced compatibility features:
 
 To create your own build environment:
 
-1. Copy `build-config.txt` to a new file
+1. Copy `shell-bun.cfg` to a new file
 2. Replace the example applications with your actual projects
 3. Replace `sleep` commands with real build commands
 4. Run the script with your config file

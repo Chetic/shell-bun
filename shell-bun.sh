@@ -4,6 +4,13 @@
 # Usage: ./shell-bun.sh [config-file]
 # Usage: ./shell-bun.sh --debug [config-file]
 
+# Check if we're running with bash 4.0+ (required for associative arrays)
+if [[ "${BASH_VERSION%%.*}" -lt 4 ]]; then
+    echo "Error: This script requires Bash 4.0 or higher for associative array support."
+    echo "Your Bash version: $BASH_VERSION"
+    exit 1
+fi
+
 set -uo pipefail
 
 # Debug mode
@@ -13,12 +20,12 @@ DEBUG_MODE=0
 if [[ "${1:-}" == "--debug" ]] || [[ "${2:-}" == "--debug" ]]; then
     DEBUG_MODE=1
     if [[ "${1:-}" == "--debug" ]]; then
-        CONFIG_FILE="${2:-build-config.txt}"
+        CONFIG_FILE="${2:-shell-bun.cfg}"
     else
-        CONFIG_FILE="${1:-build-config.txt}"
+        CONFIG_FILE="${1:-shell-bun.cfg}"
     fi
 else
-    CONFIG_FILE="${1:-build-config.txt}"
+    CONFIG_FILE="${1:-shell-bun.cfg}"
 fi
 
 # Colors for output
@@ -38,6 +45,7 @@ declare -A APP_BUILD_HOST=()
 declare -A APP_BUILD_TARGET=()
 declare -A APP_RUN_HOST=()
 declare -A APP_CLEAN=()
+declare -A APP_WORKING_DIR=()
 declare -a SELECTED_ITEMS=()
 
 # Function to print colored output
@@ -113,6 +121,9 @@ parse_config() {
                 "clean")
                     APP_CLEAN["$current_app"]="$value"
                     ;;
+                "working_dir")
+                    APP_WORKING_DIR["$current_app"]="$value"
+                    ;;
                 *)
                     print_color "$YELLOW" "Warning: Unknown directive '$key' for app '$current_app'"
                     ;;
@@ -129,12 +140,26 @@ parse_config() {
 # Function to show application details
 show_app_details() {
     local app="$1"
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local working_dir="${APP_WORKING_DIR[$app]:-}"
+    
+    if [[ -z "$working_dir" ]]; then
+        working_dir="$script_dir (default)"
+    else
+        # Expand tilde and relative paths for display
+        working_dir="${working_dir/#\~/$HOME}"
+        if [[ ! "$working_dir" =~ ^/ ]]; then
+            working_dir="$script_dir/$working_dir"
+        fi
+    fi
+    
     echo
     print_color "$CYAN" "=== $app ==="
     echo "Build (Host):   ${APP_BUILD_HOST[$app]:-'Not configured'}"
     echo "Build (Target): ${APP_BUILD_TARGET[$app]:-'Not configured'}"
     echo "Run (Host):     ${APP_RUN_HOST[$app]:-'Not configured'}"
     echo "Clean:          ${APP_CLEAN[$app]:-'Not configured'}"
+    echo "Working Dir:    $working_dir"
     echo
 }
 
@@ -170,13 +195,36 @@ execute_command() {
         return 1
     fi
     
+    # Get working directory - default to script directory if not specified
+    local working_dir="${APP_WORKING_DIR[$app]:-}"
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    if [[ -z "$working_dir" ]]; then
+        working_dir="$script_dir"
+    fi
+    
+    # Expand tilde in working_dir if present
+    working_dir="${working_dir/#\~/$HOME}"
+    
+    # Make relative paths relative to script directory
+    if [[ ! "$working_dir" =~ ^/ ]]; then
+        working_dir="$script_dir/$working_dir"
+    fi
+    
+    # Check if working directory exists
+    if [[ ! -d "$working_dir" ]]; then
+        log_execution "$app" "$action_name" "error"
+        print_color "$RED" "Error: Working directory '$working_dir' does not exist for $app"
+        return 1
+    fi
+    
     log_execution "$app" "$action_name" "start"
     
-    # Execute the command in a subshell to prevent exit from affecting the main script
+    # Execute the command in a subshell with proper working directory
     # Capture both stdout and stderr for error reporting
     local output
     local exit_code
-    output=$(bash -c "$command" 2>&1)
+    output=$(cd "$working_dir" && bash -c "$command" 2>&1)
     exit_code=$?
     
     if [[ $exit_code -eq 0 ]]; then
@@ -390,8 +438,6 @@ deselect_filtered() {
     
     SELECTED_ITEMS=("${new_selected[@]}")
 }
-
-
 
 # Function to display unified menu
 show_unified_menu() {
