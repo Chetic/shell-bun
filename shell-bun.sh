@@ -99,18 +99,18 @@ while [[ $# -gt 0 ]]; do
             echo "  build_host                  # Exact action name"
             echo "  build*                      # Wildcard: actions starting with 'build'"
             echo "  *host                       # Wildcard: actions ending with 'host'"
-            echo "  build_host,run_host         # Multiple specific actions"
-            echo "  build                       # Substring: actions containing 'build'"
-            echo "  all                         # All build actions (build_host, build_target)"
+            echo "  test*,deploy                # Multiple specific actions"
+            echo "  unit                        # Substring: actions containing 'unit'"
+            echo "  all                         # All available actions"
             echo ""
-            echo "Available actions: build_host, build_target, run_host, clean"
+            echo "Actions are completely user-defined in your config file"
             echo ""
             echo "Examples:"
-            echo "  $0 --ci MyWebApp build_host          # Build specific app"
-            echo "  $0 --ci \"*Web*\" build*             # Build all Web apps"
-            echo "  $0 --ci \"API*,Frontend\" all        # Build API and Frontend apps"
-            echo "  $0 --ci mobile build_host,run_host   # Multiple actions for mobile apps"
-            echo "  $0 --ci \"*\" build_target my.cfg    # Build all apps for target with custom config"
+            echo "  $0 --ci MyWebApp build                # Run build action"
+            echo "  $0 --ci \"*Web*\" test*              # Run test actions on Web apps"
+            echo "  $0 --ci \"API*,Frontend\" all         # Run all actions on API and Frontend"
+            echo "  $0 --ci mobile deploy,test            # Multiple actions for mobile apps"
+            echo "  $0 --ci \"*\" unit_test my.cfg        # Run unit_test on all apps with custom config"
             exit 0
             ;;
         --version|-v)
@@ -145,10 +145,8 @@ NC='\033[0m' # No Color
 
 # Global variables
 declare -a APPS=()
-declare -A APP_BUILD_HOST=()
-declare -A APP_BUILD_TARGET=()
-declare -A APP_RUN_HOST=()
-declare -A APP_CLEAN=()
+declare -A APP_ACTIONS=()      # Key: "app:action", Value: "command"
+declare -A APP_ACTION_LIST=()  # Key: "app", Value: "space-separated list of actions"
 declare -A APP_WORKING_DIR=()
 declare -a SELECTED_ITEMS=()
 
@@ -207,31 +205,30 @@ parse_config() {
             # New application section
             current_app="${BASH_REMATCH[1]}"
             APPS+=("$current_app")
+            APP_ACTION_LIST["$current_app"]=""
         elif [[ -n "$current_app" && "$line" =~ ^([^=]+)=(.*)$ ]]; then
             # Configuration directive
             local key="${BASH_REMATCH[1]}"
             local value="${BASH_REMATCH[2]}"
             
-            case "$key" in
-                "build_host")
-                    APP_BUILD_HOST["$current_app"]="$value"
-                    ;;
-                "build_target")
-                    APP_BUILD_TARGET["$current_app"]="$value"
-                    ;;
-                "run_host")
-                    APP_RUN_HOST["$current_app"]="$value"
-                    ;;
-                "clean")
-                    APP_CLEAN["$current_app"]="$value"
-                    ;;
-                "working_dir")
+            # Strip whitespace from key
+            key=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            
+            if [[ "$key" == "working_dir" ]]; then
+                # Special handling for working_dir
                     APP_WORKING_DIR["$current_app"]="$value"
-                    ;;
-                *)
-                    print_color "$YELLOW" "Warning: Unknown directive '$key' for app '$current_app'"
-                    ;;
-            esac
+            else
+                # Generic action - store the command and add to action list
+                APP_ACTIONS["$current_app:$key"]="$value"
+                
+                # Add to action list if not already present
+                local current_actions="${APP_ACTION_LIST[$current_app]}"
+                if [[ -z "$current_actions" ]]; then
+                    APP_ACTION_LIST["$current_app"]="$key"
+                elif [[ "$current_actions" != *"$key"* ]]; then
+                    APP_ACTION_LIST["$current_app"]="$current_actions $key"
+                fi
+            fi
         fi
     done < "$CONFIG_FILE"
     
@@ -259,43 +256,34 @@ show_app_details() {
     
     echo
     print_color "$CYAN" "=== $app ==="
-    echo "Build (Host):   ${APP_BUILD_HOST[$app]:-'Not configured'}"
-    echo "Build (Target): ${APP_BUILD_TARGET[$app]:-'Not configured'}"
-    echo "Run (Host):     ${APP_RUN_HOST[$app]:-'Not configured'}"
-    echo "Clean:          ${APP_CLEAN[$app]:-'Not configured'}"
     echo "Working Dir:    $working_dir"
+    echo
+    print_color "$YELLOW" "Available Actions:"
+    
+    # Get all actions for this app
+    local actions="${APP_ACTION_LIST[$app]:-}"
+    if [[ -z "$actions" ]]; then
+        echo "  No actions configured"
+    else
+        # Display each action and its command
+        for action in $actions; do
+            local command="${APP_ACTIONS[$app:$action]:-}"
+            printf "  %-20s: %s\n" "$action" "$command"
+        done
+    fi
     echo
 }
 
 # Function to execute command
 execute_command() {
     local app="$1"
-    local command_type="$2"
-    local command=""
-    local action_name=""
-    
-    case "$command_type" in
-        "build_host")
-            command="${APP_BUILD_HOST[$app]:-}"
-            action_name="Build (Host)"
-            ;;
-        "build_target")
-            command="${APP_BUILD_TARGET[$app]:-}"
-            action_name="Build (Target)"
-            ;;
-        "run_host")
-            command="${APP_RUN_HOST[$app]:-}"
-            action_name="Run (Host)"
-            ;;
-        "clean")
-            command="${APP_CLEAN[$app]:-}"
-            action_name="Clean"
-            ;;
-    esac
+    local action="$2"
+    local command="${APP_ACTIONS[$app:$action]:-}"
+    local action_name="$action"
     
     if [[ -z "$command" ]]; then
         log_execution "$app" "$action_name" "error"
-        print_color "$RED" "Error: No command configured for $command_type in $app"
+        print_color "$RED" "Error: No command configured for '$action' in $app"
         return 1
     fi
     
@@ -348,7 +336,6 @@ execute_command() {
 execute_single() {
     local app="$1"
     local action="$2"
-    local command_type="$3"
     
     print_color "$BLUE" "📦 Executing: $app - $action"
     echo
@@ -356,7 +343,7 @@ execute_single() {
     local success_count=0
     local failure_count=0
     
-    if execute_command "$app" "$command_type"; then
+    if execute_command "$app" "$action"; then
         success_count=1
     else
         failure_count=1
@@ -399,20 +386,7 @@ execute_parallel() {
             local app="${BASH_REMATCH[1]}"
             local action="${BASH_REMATCH[2]}"
             
-            case "$action" in
-                "Build (Host)")
-                    execute_command "$app" "build_host" &
-                    ;;
-                "Build (Target)")
-                    execute_command "$app" "build_target" &
-                    ;;
-                "Run (Host)")
-                    execute_command "$app" "run_host" &
-                    ;;
-                "Clean")
-                    execute_command "$app" "clean" &
-                    ;;
-            esac
+            execute_command "$app" "$action" &
             pids+=($!)
             command_names+=("$item")
         fi
@@ -491,10 +465,13 @@ toggle_selection() {
 select_all() {
     SELECTED_ITEMS=()
     for app in "${APPS[@]}"; do
-        [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && SELECTED_ITEMS+=("$app - Build (Host)")
-        [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && SELECTED_ITEMS+=("$app - Build (Target)")
-        [[ -n "${APP_RUN_HOST[$app]:-}" ]] && SELECTED_ITEMS+=("$app - Run (Host)")
-        [[ -n "${APP_CLEAN[$app]:-}" ]] && SELECTED_ITEMS+=("$app - Clean")
+        # Get all actions for this app
+        local actions="${APP_ACTION_LIST[$app]:-}"
+        if [[ -n "$actions" ]]; then
+            for action in $actions; do
+                SELECTED_ITEMS+=("$app - $action")
+            done
+        fi
     done
 }
 
@@ -554,10 +531,13 @@ show_unified_menu() {
     
     # Build menu items
     for app in "${APPS[@]}"; do
-        [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && menu_items+=("$app - Build (Host)")
-        [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && menu_items+=("$app - Build (Target)")
-        [[ -n "${APP_RUN_HOST[$app]:-}" ]] && menu_items+=("$app - Run (Host)")
-        [[ -n "${APP_CLEAN[$app]:-}" ]] && menu_items+=("$app - Clean")
+        # Get all actions for this app and create menu items
+        local actions="${APP_ACTION_LIST[$app]:-}"
+        if [[ -n "$actions" ]]; then
+            for action in $actions; do
+                menu_items+=("$app - $action")
+            done
+        fi
         menu_items+=("$app - Show Details")
     done
     
@@ -824,20 +804,7 @@ show_unified_menu() {
                                 local app="${BASH_REMATCH[1]}"
                                 local action="${BASH_REMATCH[2]}"
                                 
-                                case "$action" in
-                                    "Build (Host)")
-                                        execute_single "$app" "$action" "build_host"
-                                        ;;
-                                    "Build (Target)")
-                                        execute_single "$app" "$action" "build_target"
-                                        ;;
-                                    "Run (Host)")
-                                        execute_single "$app" "$action" "run_host"
-                                        ;;
-                                    "Clean")
-                                        execute_single "$app" "$action" "clean"
-                                        ;;
-                                esac
+                                execute_single "$app" "$action"
                                 need_full_clear=true
                             fi
                         fi
@@ -889,20 +856,7 @@ show_unified_menu() {
                                 local app="${BASH_REMATCH[1]}"
                                 local action="${BASH_REMATCH[2]}"
                                 
-                                case "$action" in
-                                    "Build (Host)")
-                                        execute_single "$app" "$action" "build_host"
-                                        ;;
-                                    "Build (Target)")
-                                        execute_single "$app" "$action" "build_target"
-                                        ;;
-                                    "Run (Host)")
-                                        execute_single "$app" "$action" "run_host"
-                                        ;;
-                                    "Clean")
-                                        execute_single "$app" "$action" "clean"
-                                        ;;
-                                esac
+                                execute_single "$app" "$action"
                                 need_full_clear=true
                             fi
                         fi
@@ -1142,19 +1096,15 @@ match_actions_fuzzy() {
     local -a matched_actions=()
     local -a available_actions=()
     
-    # Get available actions for this app
-    [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && available_actions+=("build_host")
-    [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && available_actions+=("build_target")
-    [[ -n "${APP_RUN_HOST[$app]:-}" ]] && available_actions+=("run_host")
-    [[ -n "${APP_CLEAN[$app]:-}" ]] && available_actions+=("clean")
+    # Get available actions for this app from the generic action list
+    local actions="${APP_ACTION_LIST[$app]:-}"
+    if [[ -n "$actions" ]]; then
+        read -ra available_actions <<< "$actions"
+    fi
     
     if [[ "$pattern" == "all" ]]; then
-        # Return only build actions for "all"
-        for action in "${available_actions[@]}"; do
-            if [[ "$action" == "build_host" || "$action" == "build_target" ]]; then
-                matched_actions+=("$action")
-            fi
-        done
+        # Return all available actions for "all"
+        matched_actions=("${available_actions[@]}")
     else
         # Split comma-separated patterns
         IFS=',' read -ra patterns <<< "$pattern"
@@ -1212,7 +1162,7 @@ main() {
         
         if [[ -z "$CI_ACTIONS" ]]; then
             echo "Error: Action(s) required for CI mode"
-            echo "Available actions: build_host, build_target, run_host, clean"
+            echo "Actions are user-defined in your configuration file"
             echo "Use --help for usage information"
             exit 1
         fi

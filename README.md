@@ -16,9 +16,10 @@ An interactive bash script for managing build environments with advanced feature
 
 ## Features
 
+- **Completely Generic Actions**: Define any action names you want (build, test, deploy, lint, etc.)
 - **Unified Interactive Menu**: Seamlessly combine arrow-key navigation with fuzzy search typing
 - **Multi-Selection**: Select multiple commands and execute them in parallel
-- **Simple Configuration Format**: Define applications and their build commands in a clean INI-style format
+- **Simple Configuration Format**: Define applications and their commands in a clean INI-style format
 - **Working Directory Support**: Specify custom working directories for each application
 - **Built-in Status Messages**: Automatic progress logging with emojis and colors
 - **Parallel Execution**: Run multiple commands simultaneously with execution summary
@@ -65,7 +66,7 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 #### Non-Interactive Mode (CI/CD)
 ```bash
 # Run multiple actions for an application
-./shell-bun.sh --ci APIServer build_host,run_host
+./shell-bun.sh --ci APIServer test_unit,deploy_staging
 ```
 
 **Fuzzy Pattern Matching:**
@@ -121,23 +122,17 @@ The configuration file uses a simple INI-style format:
 ```ini
 # Comments start with #
 [ApplicationName]
-build_host=command to build for host
-build_target=command to build for target platform
-run_host=command to run on host
-clean=command to clean build directory
+# Define any action names - completely customizable!
+build=command to build the application
+test_unit=command to run unit tests
+deploy_production=command to deploy to production
+clean=command to clean build artifacts
 working_dir=optional/path/to/working/directory
 
 [AnotherApp]
-build_host=make all
-run_host=./app
+build=make all
+test=make test
+serve=./start_server.sh
 clean=make clean
 working_dir=~/projects/my-app
 ```
-
-### Available Command Types
-
-- `build_host`: Commands to build the application for the host platform
-- `build_target`: Commands to build for a target platform (cross-compilation)
-- `run_host`: Commands to run the application on the host
-- `clean`: Commands to clean build artifacts
-- `working_dir`: Optional working directory where commands should be executed
