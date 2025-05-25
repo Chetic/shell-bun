@@ -81,7 +81,7 @@ while [[ $# -gt 0 ]]; do
             echo "  $0 [options] [config-file]"
             echo ""
             echo "Interactive mode (default):"
-            echo "  $0                          # Use default config (shell-bun.cfg)"
+            echo "  $0                         # Use default config (shell-bun.cfg)"
             echo "  $0 my-config.txt           # Use custom config file"
             echo "  $0 --debug                 # Enable debug logging"
             echo ""
@@ -106,11 +106,11 @@ while [[ $# -gt 0 ]]; do
             echo "Actions are completely user-defined in your config file"
             echo ""
             echo "Examples:"
-            echo "  $0 --ci MyWebApp build                # Run build action"
+            echo "  $0 --ci MyWebApp build             # Run build action"
             echo "  $0 --ci \"*Web*\" test*              # Run test actions on Web apps"
-            echo "  $0 --ci \"API*,Frontend\" all         # Run all actions on API and Frontend"
-            echo "  $0 --ci mobile deploy,test            # Multiple actions for mobile apps"
-            echo "  $0 --ci \"*\" unit_test my.cfg        # Run unit_test on all apps with custom config"
+            echo "  $0 --ci \"API*,Frontend\" all        # Run all actions on API and Frontend"
+            echo "  $0 --ci mobile deploy,test         # Multiple actions for mobile apps"
+            echo "  $0 --ci \"*\" unit_test my.cfg       # Run unit_test on all apps with custom config"
             exit 0
             ;;
         --version|-v)
