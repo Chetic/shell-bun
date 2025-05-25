@@ -564,12 +564,12 @@ show_unified_menu() {
             filter_changed=true
         fi
         prev_filter="$filter"
-        print_color "$BLUE" "╔════════════════════════════════════════════════╗"
-        print_color "$BLUE" "║           Shell-Bun by Fredrik Reveny          ║"
-        print_color "$BLUE" "╚════════════════════════════════════════════════╝"
+        print_color "$BLUE" "╔══════════════════════════════════════════════════════════════════════════════════════╗"
+        print_color "$BLUE" "║          Shell-Bun by Fredrik Reveny (https://github.com/Chetic/shell-bun/)          ║"
+        print_color "$BLUE" "╚══════════════════════════════════════════════════════════════════════════════════════╝"
         echo
         print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: jump 10 lines | Type: filter | Space: select | Enter: execute | ESC: quit"
-        print_color "$CYAN" "Shortcuts: '+': select visible | '-': deselect visible | Enter: run current or selected"
+        print_color "$CYAN" "Shortcuts: '+': select visible | '-': deselect visible | Delete: clear filter | Enter: run current or selected"
         echo
         
         # Clear content area if filter changed or selections changed (but not full screen to avoid flicker)
@@ -719,7 +719,7 @@ show_unified_menu() {
                 debug_log "Detected ESC sequence"
                 # Read the next part to distinguish between ESC and arrow keys
                 read -rsn2 -t 0.1 arrows 2>/dev/null
-                debug_log "Arrow sequence: '$arrows'"
+                debug_log "ESC sequence: '$arrows'"
                 if [[ "$arrows" == "[A" ]]; then
                     # Up arrow
                     debug_log "Up arrow pressed"
@@ -759,10 +759,10 @@ show_unified_menu() {
                         fi
                     fi
                 elif [[ "$arrows" == "[3" ]]; then
-                    # Potential Ctrl+Backspace sequence - read final character
+                    # Delete key sequence - read final character
                     read -rsn1 -t 0.1 final_char 2>/dev/null
                     if [[ "$final_char" == "~" ]]; then
-                        debug_log "Ctrl+Backspace (ESC sequence) pressed - clearing filter"
+                        debug_log "Delete key (ESC[3~) pressed - clearing filter"
                         filter=""
                         selected=0
                         need_full_clear=true
