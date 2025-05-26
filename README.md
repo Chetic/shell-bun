@@ -23,6 +23,8 @@ An interactive bash script for managing build environments with advanced feature
 - **Working Directory Support**: Specify custom working directories for each application
 - **Built-in Status Messages**: Automatic progress logging with emojis and colors
 - **Parallel Execution**: Run multiple commands simultaneously with execution summary
+- **Automatic Logging**: Commands logged to timestamped files with configurable log directories
+- **Interactive Log Viewer**: Browse and view execution logs after everything is completed
 - **Color-coded Output**: Beautiful terminal interface with intuitive visual feedback
 - **No Dependencies**: Pure bash implementation with no external tools required
 
@@ -36,7 +38,7 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 - **Batch Operations**: Execute multiple actions in sequence
 - **Error Handling**: Clear error messages and failure reporting
 - **Structured Output**: CI-friendly logging format
-- **Parallel Processing**: Multiple applications execute simultaneously for maximum speed
+- **Parallel Processing**: All actions execute simultaneously for maximum speed
 - **Pattern Matching**: Fuzzy matching with wildcards and substrings
 
 ### Perfect for DevOps
@@ -121,6 +123,10 @@ The configuration file uses a simple INI-style format:
 
 ```ini
 # Comments start with #
+
+# Global settings (before any app sections)
+log_dir=logs  # Global log directory for all apps
+
 [ApplicationName]
 # Define any action names - completely customizable!
 build=command to build the application
@@ -128,6 +134,7 @@ test_unit=command to run unit tests
 deploy_production=command to deploy to production
 clean=command to clean build artifacts
 working_dir=optional/path/to/working/directory
+log_dir=optional/path/to/override/global/log/dir  # Optional per-app override
 
 [AnotherApp]
 build=make all

@@ -148,7 +148,10 @@ declare -a APPS=()
 declare -A APP_ACTIONS=()      # Key: "app:action", Value: "command"
 declare -A APP_ACTION_LIST=()  # Key: "app", Value: "space-separated list of actions"
 declare -A APP_WORKING_DIR=()
+declare -A APP_LOG_DIR=()      # Key: "app", Value: "log directory path"
 declare -a SELECTED_ITEMS=()
+declare -a EXECUTION_RESULTS=() # Track execution results for log viewing
+GLOBAL_LOG_DIR=""              # Global log directory from config
 
 # Function to print colored output
 print_color() {
@@ -164,15 +167,54 @@ debug_log() {
     fi
 }
 
+# Function to generate log file path
+generate_log_file_path() {
+    local app="$1"
+    local action="$2"
+    local timestamp=$(date '+%Y%m%d_%H%M%S')
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Get log directory - check app-specific first, then global, then default
+    local log_dir="${APP_LOG_DIR[$app]:-}"
+    if [[ -z "$log_dir" && -n "$GLOBAL_LOG_DIR" ]]; then
+        log_dir="$GLOBAL_LOG_DIR"
+    elif [[ -z "$log_dir" ]]; then
+        log_dir="$script_dir/logs"
+    fi
+    
+    # Expand tilde in log_dir if present
+    log_dir="${log_dir/#\~/$HOME}"
+    
+    # Make relative paths relative to script directory
+    if [[ ! "$log_dir" =~ ^/ ]]; then
+        log_dir="$script_dir/$log_dir"
+    fi
+    
+    # Create log directory if it doesn't exist
+    mkdir -p "$log_dir" 2>/dev/null || {
+        echo "Warning: Cannot create log directory '$log_dir', using script directory"
+        log_dir="$script_dir"
+    }
+    
+    # Generate log file name: timestamp_app_action.log
+    local log_file="$log_dir/${timestamp}_${app}_${action}.log"
+    echo "$log_file"
+}
+
 # Function to log execution status
 log_execution() {
     local app="$1"
     local action="$2"
     local status="$3" # start, success, error
+    local command="${4:-}" # optional command to display
     
     case "$status" in
         "start")
-            print_color "$CYAN" "🚀 Starting: $app - $action"
+            if [[ -n "$command" ]]; then
+                print_color "$CYAN" "🚀 Starting: $app - $action: ${DIM}$command${NC}${CYAN}"
+            else
+                print_color "$CYAN" "🚀 Starting: $app - $action"
+            fi
             ;;
         "success")
             print_color "$GREEN" "✅ Completed: $app - $action"
@@ -206,7 +248,7 @@ parse_config() {
             current_app="${BASH_REMATCH[1]}"
             APPS+=("$current_app")
             APP_ACTION_LIST["$current_app"]=""
-        elif [[ -n "$current_app" && "$line" =~ ^([^=]+)=(.*)$ ]]; then
+        elif [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
             # Configuration directive
             local key="${BASH_REMATCH[1]}"
             local value="${BASH_REMATCH[2]}"
@@ -214,10 +256,16 @@ parse_config() {
             # Strip whitespace from key
             key=$(echo "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
             
-            if [[ "$key" == "working_dir" ]]; then
+            if [[ -z "$current_app" && "$key" == "log_dir" ]]; then
+                # Global log_dir setting (outside any app section)
+                GLOBAL_LOG_DIR="$value"
+            elif [[ -n "$current_app" && "$key" == "working_dir" ]]; then
                 # Special handling for working_dir
-                    APP_WORKING_DIR["$current_app"]="$value"
-            else
+                APP_WORKING_DIR["$current_app"]="$value"
+            elif [[ -n "$current_app" && "$key" == "log_dir" ]]; then
+                # Special handling for log_dir (per-app override)
+                APP_LOG_DIR["$current_app"]="$value"
+            elif [[ -n "$current_app" ]]; then
                 # Generic action - store the command and add to action list
                 APP_ACTIONS["$current_app:$key"]="$value"
                 
@@ -243,6 +291,7 @@ show_app_details() {
     local app="$1"
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     local working_dir="${APP_WORKING_DIR[$app]:-}"
+    local log_dir="${APP_LOG_DIR[$app]:-}"
     
     if [[ -z "$working_dir" ]]; then
         working_dir="$script_dir (default)"
@@ -254,9 +303,31 @@ show_app_details() {
         fi
     fi
     
+    # Determine effective log directory
+    if [[ -n "$log_dir" ]]; then
+        # App-specific log directory
+        log_dir="${log_dir/#\~/$HOME}"
+        if [[ ! "$log_dir" =~ ^/ ]]; then
+            log_dir="$script_dir/$log_dir"
+        fi
+        log_dir="$log_dir (app-specific)"
+    elif [[ -n "$GLOBAL_LOG_DIR" ]]; then
+        # Global log directory
+        log_dir="$GLOBAL_LOG_DIR"
+        log_dir="${log_dir/#\~/$HOME}"
+        if [[ ! "$log_dir" =~ ^/ ]]; then
+            log_dir="$script_dir/$log_dir"
+        fi
+        log_dir="$log_dir (global)"
+    else
+        # Default
+        log_dir="$script_dir/logs (default)"
+    fi
+    
     echo
     print_color "$CYAN" "=== $app ==="
     echo "Working Dir:    $working_dir"
+    echo "Log Dir:        $log_dir"
     echo
     print_color "$YELLOW" "Available Actions:"
     
@@ -278,6 +349,8 @@ show_app_details() {
 execute_command() {
     local app="$1"
     local action="$2"
+    local show_output="${3:-false}"  # New parameter: whether to show output in terminal
+    local log_file_var="$4"          # Variable name to store log file path
     local command="${APP_ACTIONS[$app:$action]:-}"
     local action_name="$action"
     
@@ -310,23 +383,41 @@ execute_command() {
         return 1
     fi
     
-    log_execution "$app" "$action_name" "start"
+    # Generate log file path (unless in CI mode)
+    local log_file=""
+    if [[ $CI_MODE -eq 0 ]]; then
+        log_file=$(generate_log_file_path "$app" "$action")
+        # Store log file path in the provided variable name
+        if [[ -n "$log_file_var" ]]; then
+            declare -g "$log_file_var=$log_file"
+        fi
+    fi
+    
+    log_execution "$app" "$action_name" "start" "$command"
     
     # Execute the command in a subshell with proper working directory
-    # Capture both stdout and stderr for error reporting
-    local output
     local exit_code
-    output=$(cd "$working_dir" && bash -c "$command" 2>&1)
-    exit_code=$?
+    if [[ $CI_MODE -eq 1 ]]; then
+        # CI mode: just print to terminal
+        (cd "$working_dir" && bash -c "$command")
+        exit_code=$?
+    elif [[ "$show_output" == "true" ]]; then
+        # Interactive single execution: show output and log to file
+        (cd "$working_dir" && bash -c "$command" 2>&1 | tee "$log_file")
+        exit_code=${PIPESTATUS[0]}
+    else
+        # Interactive parallel execution: only log to file
+        (cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1)
+        exit_code=$?
+    fi
     
     if [[ $exit_code -eq 0 ]]; then
         log_execution "$app" "$action_name" "success"
         return 0
     else
         log_execution "$app" "$action_name" "error"
-        print_color "$RED" "Command failed with exit code $exit_code"
-        if [[ -n "$output" && $DEBUG_MODE -eq 1 ]]; then
-            print_color "$RED" "Error output: $output"
+        if [[ $CI_MODE -eq 1 ]]; then
+            print_color "$RED" "Command failed with exit code $exit_code"
         fi
         return 1
     fi
@@ -342,8 +433,9 @@ execute_single() {
     
     local success_count=0
     local failure_count=0
+    local log_file=""
     
-    if execute_command "$app" "$action"; then
+    if execute_command "$app" "$action" "true" "log_file"; then
         success_count=1
     else
         failure_count=1
@@ -353,13 +445,120 @@ execute_single() {
     print_color "$BOLD" "📊 Execution Summary:"
     if [[ $success_count -gt 0 ]]; then
         print_color "$GREEN" "✅ Successful: $success_count"
+        if [[ -n "$log_file" ]]; then
+            print_color "$CYAN" "📝 Log file: $log_file"
+        fi
     fi
     if [[ $failure_count -gt 0 ]]; then
         print_color "$RED" "❌ Failed: $failure_count"
+        if [[ -n "$log_file" ]]; then
+            print_color "$CYAN" "📝 Log file: $log_file"
+        fi
     fi
     echo
     echo "Press Enter to continue..."
     read
+}
+
+# Function to show log viewer menu
+show_log_viewer() {
+    local -a results=("$@")
+    
+    if [[ ${#results[@]} -eq 0 ]]; then
+        return
+    fi
+    
+    # Sort results: failed first, then successful
+    local -a failed_results=()
+    local -a success_results=()
+    
+    for result in "${results[@]}"; do
+        if [[ "$result" =~ ^FAILED: ]]; then
+            failed_results+=("$result")
+        else
+            success_results+=("$result")
+        fi
+    done
+    
+    local -a sorted_results=()
+    sorted_results+=("${failed_results[@]}")
+    sorted_results+=("${success_results[@]}")
+    
+    local selected=0
+    
+    while true; do
+        clear
+        print_color "$CYAN" "📋 Select a log file to view (q to quit):"
+        echo
+        
+        for i in "${!sorted_results[@]}"; do
+            local result="${sorted_results[$i]}"
+            local prefix="  "
+            
+            if [[ $i -eq $selected ]]; then
+                prefix="► "
+            fi
+            
+            if [[ "$result" =~ ^FAILED: ]]; then
+                print_color "$RED" "${prefix}${result}"
+            else
+                print_color "$GREEN" "${prefix}${result}"
+            fi
+        done
+        
+        echo
+        print_color "$DIM" "Use ↑/↓ arrows to navigate, Enter to view log, q to return to menu, ESC to exit"
+        
+        # Read user input
+        read -rsn1 key 2>/dev/null
+        
+        case "$key" in
+            $'\x1b') # Escape key or arrow keys
+                # Read the next part to distinguish between ESC and arrow keys
+                read -rsn2 -t 0.1 arrows 2>/dev/null
+                if [[ "$arrows" == "[A" ]]; then
+                    # Up arrow
+                    if [[ $selected -gt 0 ]]; then
+                        ((selected--))
+                    fi
+                elif [[ "$arrows" == "[B" ]]; then
+                    # Down arrow
+                    if [[ $selected -lt $((${#sorted_results[@]} - 1)) ]]; then
+                        ((selected++))
+                    fi
+                else
+                    # Plain ESC key - exit script
+                    printf '\033[?25h'  # Show cursor
+                    clear
+                    print_color "$YELLOW" "Goodbye!"
+                    exit 0
+                fi
+                ;;
+            $'\n'|$'\r'|$'\0') # Enter key
+                if [[ ${#sorted_results[@]} -gt 0 ]]; then
+                    local selected_result="${sorted_results[$selected]}"
+                    local log_file=""
+                    
+                    if [[ "$selected_result" =~ ^(FAILED|SUCCESS):\ (.+)\ -\ (.+)\ \((.+)\)$ ]]; then
+                        log_file="${BASH_REMATCH[4]}"
+                        
+                        if [[ -f "$log_file" ]]; then
+                            # Use less with +G to go to the end of the file
+                            less +G "$log_file"
+                        else
+                            print_color "$RED" "Log file not found: $log_file"
+                            echo "Press Enter to continue..."
+                            read
+                        fi
+                    fi
+                fi
+                ;;
+            'q'|'Q')
+                # Return to main menu
+                break
+                ;;
+        esac
+    done
 }
 
 # Function to execute multiple commands in parallel
@@ -367,6 +566,7 @@ execute_parallel() {
     local -a pids=()
     local -a commands=()
     local -a command_names=()
+    local -a log_files=()
     local total=${#SELECTED_ITEMS[@]}
     
     if [[ $total -eq 0 ]]; then
@@ -377,7 +577,11 @@ execute_parallel() {
     print_color "$BLUE" "📦 Executing $total selected items in parallel..."
     echo
     
-    # Start all commands in background
+    # Clear previous execution results
+    EXECUTION_RESULTS=()
+    
+    # Generate log files before starting background processes
+    local counter=0
     for item in "${SELECTED_ITEMS[@]}"; do
         if [[ "$item" =~ ^(.+)\ -\ Show\ Details$ ]]; then
             # Skip details items
@@ -386,9 +590,45 @@ execute_parallel() {
             local app="${BASH_REMATCH[1]}"
             local action="${BASH_REMATCH[2]}"
             
-            execute_command "$app" "$action" &
+            # Get and display the command
+            local command="${APP_ACTIONS[$app:$action]:-}"
+            log_execution "$app" "$action" "start" "$command"
+            
+            # Generate log file path
+            local log_file=$(generate_log_file_path "$app" "$action")
+            log_files+=("$log_file")
+            
+            # Start command in background, redirecting to log file
+            (
+                # Get working directory
+                local working_dir="${APP_WORKING_DIR[$app]:-}"
+                local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                
+                if [[ -z "$working_dir" ]]; then
+                    working_dir="$script_dir"
+                fi
+                
+                # Expand tilde in working_dir if present
+                working_dir="${working_dir/#\~/$HOME}"
+                
+                # Make relative paths relative to script directory
+                if [[ ! "$working_dir" =~ ^/ ]]; then
+                    working_dir="$script_dir/$working_dir"
+                fi
+                
+                # Execute command
+                local command="${APP_ACTIONS[$app:$action]:-}"
+                if [[ -n "$command" && -d "$working_dir" ]]; then
+                    cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1
+                else
+                    echo "Error: Command not found or working directory invalid" > "$log_file" 2>&1
+                    exit 1
+                fi
+            ) &
+            
             pids+=($!)
             command_names+=("$item")
+            ((counter++))
         fi
     done
     
@@ -400,11 +640,17 @@ execute_parallel() {
     for i in "${!pids[@]}"; do
         local pid="${pids[$i]}"
         local cmd_name="${command_names[$i]}"
+        local log_file_path="${log_files[$i]}"
+        
         if wait "$pid"; then
             ((success_count++))
+            EXECUTION_RESULTS+=("SUCCESS: $cmd_name ($log_file_path)")
+            log_execution "${cmd_name%% - *}" "${cmd_name##* - }" "success"
         else
             ((failure_count++))
             failed_commands+=("$cmd_name")
+            EXECUTION_RESULTS+=("FAILED: $cmd_name ($log_file_path)")
+            log_execution "${cmd_name%% - *}" "${cmd_name##* - }" "error"
         fi
     done
     
@@ -421,8 +667,14 @@ execute_parallel() {
         fi
     fi
     echo
-    echo "Press Enter to continue..."
-    read
+    
+    # Show log viewer directly
+    if [[ ${#EXECUTION_RESULTS[@]} -gt 0 ]]; then
+        show_log_viewer "${EXECUTION_RESULTS[@]}"
+    else
+        echo "Press Enter to continue..."
+        read
+    fi
 }
 
 # Function to check if item is selected
@@ -947,12 +1199,11 @@ execute_ci_mode() {
     echo "Config: $CONFIG_FILE"
     echo "========================================"
     
-    # Prepare parallel execution
-    local -a app_pids=()
-    local -a app_names=()
-    local -a app_action_counts=()
+    # Prepare completely parallel execution (all actions run in parallel)
+    local -a pids=()
+    local -a command_descriptions=()
     
-    # Start all app processing in parallel
+    # Start all matched commands in parallel
     for app in "${matched_apps[@]}"; do
         # Skip empty entries
         [[ -z "$app" ]] && continue
@@ -963,81 +1214,57 @@ execute_ci_mode() {
         
         if [[ -z "$matched_actions_output" ]]; then
             echo "Warning: No actions found for '$app' matching pattern '$action_pattern'"
-            local -a available_actions=()
-            [[ -n "${APP_BUILD_HOST[$app]:-}" ]] && available_actions+=("build_host")
-            [[ -n "${APP_BUILD_TARGET[$app]:-}" ]] && available_actions+=("build_target")
-            [[ -n "${APP_RUN_HOST[$app]:-}" ]] && available_actions+=("run_host")
-            [[ -n "${APP_CLEAN[$app]:-}" ]] && available_actions+=("clean")
-            echo "Available actions for $app: ${available_actions[*]}"
+            local actions="${APP_ACTION_LIST[$app]:-}"
+            echo "Available actions for $app: $actions"
             continue
         fi
         
         local -a matched_actions
         readarray -t matched_actions <<< "$matched_actions_output"
         
-        # Start app processing in background
-        (
-            local app_success=0
-            local app_failure=0
+        # Start each action in parallel
+        for action in "${matched_actions[@]}"; do
+            # Skip empty entries
+            [[ -z "$action" ]] && continue
             
-            # Execute each matched action for this app sequentially within the parallel job
-            for action in "${matched_actions[@]}"; do
-                # Skip empty entries
-                [[ -z "$action" ]] && continue
-                
-                if execute_command "$app" "$action"; then
-                    ((app_success++))
-                else
-                    ((app_failure++))
-                fi
-            done
-            
-            # Exit with failure if any action failed
-            if [[ $app_failure -gt 0 ]]; then
-                exit 1
-            else
-                exit 0
-            fi
-        ) &
-        
-        # Track the background process
-        app_pids+=($!)
-        app_names+=("$app")
-        app_action_counts+=(${#matched_actions[@]})
+            # Start each action as a separate background process
+            execute_command "$app" "$action" "false" "" &
+            pids+=($!)
+            command_descriptions+=("$app - $action")
+        done
     done
     
     echo ""
-    echo "Running ${#app_pids[@]} applications in parallel..."
+    echo "Running ${#pids[@]} actions in parallel..."
     echo "========================================"
     
     # Wait for all background processes and collect results
     local total_success=0
     local total_failure=0
-    local -a failed_apps=()
+    local -a failed_commands=()
     
-    for i in "${!app_pids[@]}"; do
-        local pid="${app_pids[$i]}"
-        local app_name="${app_names[$i]}"
-        local action_count="${app_action_counts[$i]}"
+    for i in "${!pids[@]}"; do
+        local pid="${pids[$i]}"
+        local cmd_description="${command_descriptions[$i]}"
         
         if wait "$pid"; then
-            ((total_success += action_count))
+            ((total_success++))
         else
-            ((total_failure += action_count))
-            failed_apps+=("$app_name")
+            ((total_failure++))
+            failed_commands+=("$cmd_description")
         fi
     done
     
     echo ""
     echo "========================================"
     echo "CI Execution Summary (Parallel):"
-    echo "Apps processed: ${#matched_apps[@]}"
+    echo "Commands executed: ${#pids[@]}"
     echo "✅ Successful operations: $total_success"
     if [[ $total_failure -gt 0 ]]; then
         echo "❌ Failed operations: $total_failure"
-        echo "Failed applications:"
-        for failed_app in "${failed_apps[@]}"; do
-            echo "  - $failed_app"
+        echo "Failed commands:"
+        for failed_cmd in "${failed_commands[@]}"; do
+            echo "  - $failed_cmd"
         done
         exit 1
     else
