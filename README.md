@@ -4,6 +4,8 @@
 
 An interactive bash script for managing build environments with advanced features and no external dependencies.
 
+![demo](shell-bun-demo.gif)
+
 ## 🚀 Easy Deployment
 
 **Shell-Bun is completely standalone** - it's a single bash script with zero dependencies that can be deployed anywhere instantly:
