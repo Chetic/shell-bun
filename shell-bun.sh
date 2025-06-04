@@ -510,12 +510,34 @@ show_log_viewer() {
     # Ensure cursor is shown on exit (also done in show_unified_menu, good practice here too)
     trap 'printf "\033[?25h"' EXIT
 
+    local log_viewer_static_header_height=2 # "Select a log file..." + echo
+    local dynamic_content_start_line=$((log_viewer_static_header_height + 1)) # Should be 3
+
     while true; do
         if [[ "$first_draw" == "true" ]]; then
             clear
+            printf '\033[H' # Cursor to home
+
+            # Print static header for log viewer
+            print_color "$CYAN" "📋 Select a log file to view (q to quit):"
+            echo
+
             first_draw=false
         else
-            clear
+            # Partial refresh for log viewer
+            local start_line=${dynamic_content_start_line}
+            if [[ -z "$start_line" || "$start_line" -le 0 ]]; then start_line=1; fi
+            if [[ "$start_line" -gt "$terminal_height" ]]; then start_line=$terminal_height; fi
+
+            local last_line_to_clear=$((terminal_height - 1)) # Assuming reserved_bottom_line is 1
+            if [[ "$last_line_to_clear" -lt "$start_line" ]]; then last_line_to_clear=$start_line; fi
+            if [[ "$last_line_to_clear" -gt "$terminal_height" ]]; then last_line_to_clear=$terminal_height; fi
+
+            for ((line_idx = start_line; line_idx <= last_line_to_clear; line_idx++)); do
+                printf $'\\033['"${line_idx}"$';1H' # Move to start of the line
+                printf $'\\033[2K'                # Clear entire line
+            done
+            printf $'\\033['"${start_line}"$';1H'     # Reset cursor to start of dynamic content area
         fi
         
         local num_logs=${#sorted_results[@]}
@@ -551,35 +573,28 @@ show_log_viewer() {
             fi
         fi
 
-        print_color "$CYAN" "📋 Select a log file to view (q to quit):"
-        echo
-
-        # Display "items above" indicator
-        if [[ $view_offset -gt 0 ]]; then
-            print_color "$DIM" "  ... $((view_offset)) more log(s) above ..."
-        else
-            if [[ $num_logs -gt $menu_max_display_lines ]]; then echo ""; fi
-        fi
-        
-        local display_loop_end_index=$((view_offset + menu_max_display_lines - 1))
-        if [[ $display_loop_end_index -ge $num_logs ]]; then
-            display_loop_end_index=$((num_logs - 1))
-        fi
-
-        for (( i=view_offset; i <= display_loop_end_index && i < num_logs; i++ )); do
-            local result="${sorted_results[$i]}"
-            local prefix="  "
-            
-            if [[ $i -eq $selected ]]; then
-                prefix="► "
+        # Display filtered items within the viewport
+        if [[ $menu_max_display_lines -gt 0 ]]; then
+            local display_loop_end_index=$((view_offset + menu_max_display_lines - 1))
+            if [[ $display_loop_end_index -ge $num_logs ]]; then
+                display_loop_end_index=$((num_logs - 1))
             fi
-            
-            if [[ "$result" =~ ^FAILED: ]]; then
-                print_color "$RED" "${prefix}${result}"
-            else
-                print_color "$GREEN" "${prefix}${result}"
-            fi
-        done
+
+            for (( i=view_offset; i <= display_loop_end_index && i < num_logs; i++ )); do
+                local result="${sorted_results[$i]}"
+                local prefix="  "
+                
+                if [[ $i -eq $selected ]]; then
+                    prefix="► "
+                fi
+                
+                if [[ "$result" =~ ^FAILED: ]]; then
+                    print_color "$RED" "${prefix}${result}"
+                else
+                    print_color "$GREEN" "${prefix}${result}"
+                fi
+            done
+        fi
         
         if [[ $num_logs -eq 0 ]]; then # Should not happen given initial check, but good for safety
             print_color "$YELLOW" "No log files to display."
@@ -883,27 +898,47 @@ show_unified_menu() {
     # Scrolling and viewport variables
     local terminal_height
     terminal_height=$(tput lines 2>/dev/null || echo 24) # Default to 24 if tput fails
-    local original_header_content_lines=9 # Reduced from 10, as one blank line after filter/selection will be removed
+    
+    local title_box_height=4 # 3 for box, 1 for blank line after
+    local help_lines_height=3 # 2 for help, 1 for blank line after
+    local status_lines_height=2 # 1 for filter, 1 for selected (no blank line after these now)
     local scroll_indicator_lines=2 # Reserve 2 lines for "items above" and "items below" indicators
     local min_menu_items_display=3 # Minimum number of items to try and display
     local min_height_for_title_box=15 # Threshold to hide title box
+    local reserved_bottom_line=1 # Keep one line at the bottom empty
 
-    local effective_header_lines=$original_header_content_lines
+    local static_header_actual_height
     local show_title_box=true
     if [[ $terminal_height -lt $min_height_for_title_box ]]; then
-        effective_header_lines=$((original_header_content_lines - 4)) # 3 for box, 1 for blank line after
         show_title_box=false
+        static_header_actual_height=$help_lines_height # Only help lines
+    else
+        show_title_box=true
+        static_header_actual_height=$((title_box_height + help_lines_height)) # Title box + help lines
     fi
     
-    local menu_max_display_lines=$((terminal_height - effective_header_lines - scroll_indicator_lines - 1)) # -1 to leave a blank line at the bottom
+    local dynamic_content_start_line=$((static_header_actual_height + 1))
+    
+    local menu_max_display_lines=$((terminal_height - static_header_actual_height - status_lines_height - scroll_indicator_lines - reserved_bottom_line))
     if [[ $menu_max_display_lines -lt $min_menu_items_display ]]; then
-        menu_max_display_lines=$min_menu_items_display
+        # If not enough space even for min display, check if we can at least show min_menu_items_display
+        # by sacrificing the reserved bottom line.
+        local potential_max_lines_no_reserve=$((terminal_height - static_header_actual_height - status_lines_height - scroll_indicator_lines))
+        if [[ $potential_max_lines_no_reserve -ge $min_menu_items_display ]]; then
+             menu_max_display_lines=$potential_max_lines_no_reserve
+        elif [[ $potential_max_lines_no_reserve -lt 0 ]]; then # Not enough space at all
+            menu_max_display_lines=0
+        else
+            menu_max_display_lines=$potential_max_lines_no_reserve # Show what we can, even if < min_menu_items_display
+        fi
     fi
+    if [[ $menu_max_display_lines -lt 0 ]]; then menu_max_display_lines=0; fi
+
+
     local view_offset=0 # Starting index of the visible part of the filtered items
 
     # Build menu items
     for app in "${APPS[@]}"; do
-        # Get all actions for this app and create menu items
         local actions="${APP_ACTION_LIST[$app]:-}"
         if [[ -n "$actions" ]]; then
             for action in $actions; do
@@ -913,43 +948,56 @@ show_unified_menu() {
         menu_items+=("$app - Show Details")
     done
     
-    # Hide cursor to prevent flickering
-    printf '\033[?25l'
-    
-    # Ensure cursor is shown on exit
-    trap 'printf "\033[?25h"' EXIT
+    printf '\033[?25l' # Hide cursor
+    trap 'printf "\033[?25h"' EXIT # Ensure cursor is shown on exit
     
     while true; do
-        # Screen refresh logic
         if [[ "$first_draw" == "true" ]] || [[ "$need_full_clear" == "true" ]]; then
             clear
+            printf '\033[H' # Cursor to home
+            
+            # Print static header
+            if [[ "$show_title_box" == "true" ]]; then
+                print_color "$BLUE" "╔══════════════════════════════════════════════════════════════════════════════════════╗"
+                print_color "$BLUE" "║          Shell-Bun by Fredrik Reveny (https://github.com/Chetic/shell-bun/)          ║"
+                print_color "$BLUE" "╚══════════════════════════════════════════════════════════════════════════════════════╝"
+                echo
+            fi
+            print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: page | Type: filter | Space: select | Enter: execute | ESC: quit"
+            print_color "$CYAN" "Shortcuts: '+' select visible | '-' deselect visible | Delete: clear filter | Enter: run current or selected"
+            echo
+
             first_draw=false
             need_full_clear=false
         else
-            # Use the 'clear' command for all subsequent screen refreshes
-            clear
+            # Partial refresh: move cursor to start of dynamic content and clear below
+            local start_line=${dynamic_content_start_line}
+            if [[ -z "$start_line" || "$start_line" -le 0 ]]; then start_line=1; fi
+            if [[ "$start_line" -gt "$terminal_height" ]]; then start_line=$terminal_height; fi
+
+            # show_unified_menu already has 'reserved_bottom_line' variable, typically 1.
+            local last_line_to_clear=$((terminal_height - reserved_bottom_line))
+            if [[ "$last_line_to_clear" -lt "$start_line" ]]; then last_line_to_clear=$start_line; fi
+            if [[ "$last_line_to_clear" -gt "$terminal_height" ]]; then last_line_to_clear=$terminal_height; fi
+
+            for ((line_idx = start_line; line_idx <= last_line_to_clear; line_idx++)); do
+                printf $'\\033['"${line_idx}"$';1H' # Move to start of the line
+                printf $'\\033[2K'                # Clear entire line
+            done
+            printf $'\\033['"${start_line}"$';1H'     # Reset cursor to start of dynamic content area
         fi
         
-        # Track if filter changed for content clearing
-        local filter_changed=false # This flag might still be useful for logic other than clearing
+        # Track if filter changed (still useful for other logic, e.g., resetting selection index)
+        local filter_changed=false 
         if [[ "$filter" != "$prev_filter" ]]; then
             filter_changed=true
+            selected=0 # Reset selection when filter changes
+            view_offset=0 # Reset view offset when filter changes
         fi
         prev_filter="$filter"
 
-        if [[ "$show_title_box" == "true" ]]; then
-            print_color "$BLUE" "╔══════════════════════════════════════════════════════════════════════════════════════╗"
-            print_color "$BLUE" "║          Shell-Bun by Fredrik Reveny (https://github.com/Chetic/shell-bun/)          ║"
-            print_color "$BLUE" "╚══════════════════════════════════════════════════════════════════════════════════════╝"
-            echo
-        fi
-
-        # Navigation help lines (always print both)
-        print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: page | Type: filter | Space: select | Enter: execute | ESC: quit"
-        print_color "$CYAN" "Shortcuts: '+': select visible | '-': deselect visible | Delete: clear filter | Enter: run current or selected"
-        echo
-
-        # Display filter status and selection count
+        # Always print dynamic content from here
+        # Display filter status and selection count (Dynamic Header)
         if [[ -n "$filter" ]]; then
             print_color "$YELLOW" "Filter: $filter"
         else
@@ -961,138 +1009,104 @@ show_unified_menu() {
         else
             print_color "$DIM" "Selected: none"
         fi
-        
-        # Filter and display matching commands
+
+        # Filter menu items
         local -a filtered=()
-        
         for item in "${menu_items[@]}"; do
             if [[ -z "$filter" ]] || [[ "${item,,}" == *"${filter,,}"* ]]; then
                 filtered+=("$item")
             fi
         done
-        
         local num_filtered=${#filtered[@]}
 
-        # Adjust 'selected' index to be within bounds of filtered items
+        # Adjust 'selected' index
         if [[ $num_filtered -eq 0 ]]; then
-            selected=0 # No items, selected is 0
+            selected=0
         else
-            if [[ $selected -ge $num_filtered ]]; then
-                selected=$((num_filtered - 1))
-            fi
-            if [[ $selected -lt 0 ]]; then # Should not happen if num_filtered > 0
-                selected=0
-            fi
+            if [[ $selected -ge $num_filtered ]]; then selected=$((num_filtered - 1)); fi
+            if [[ $selected -lt 0 ]]; then selected=0; fi
         fi
 
-        # Calculate view_offset to keep 'selected' item in view and for scrolling
+        # Calculate view_offset for scrolling
         if [[ $num_filtered -le $menu_max_display_lines ]]; then
-            view_offset=0 # All items fit, so view starts at 0
+            view_offset=0
         else
-            # If selected item is above current view
             if [[ $selected -lt $view_offset ]]; then
                 view_offset=$selected
-            # If selected item is below current view (or at the last line of it)
             elif [[ $selected -ge $((view_offset + menu_max_display_lines)) ]]; then
                 view_offset=$((selected - menu_max_display_lines + 1))
             fi
-
-            # Clamp view_offset to ensure it's valid
-            if [[ $view_offset -lt 0 ]]; then
-                view_offset=0
-            fi
-            # Ensure view_offset doesn't go too far if scrolling near the end
-            if [[ $((view_offset + menu_max_display_lines)) -gt $num_filtered ]]; then
-                view_offset=$((num_filtered - menu_max_display_lines))
-                if [[ $view_offset -lt 0 ]]; then view_offset=0; fi # Handles num_filtered < menu_max_display_lines
-            fi
+            if [[ $view_offset -lt 0 ]]; then view_offset=0; fi
+            local max_offset=$((num_filtered - menu_max_display_lines))
+            if [[ $max_offset -lt 0 ]]; then max_offset=0; fi # Handle case where num_filtered < menu_max_display_lines
+            if [[ $view_offset -gt $max_offset ]]; then view_offset=$max_offset; fi
         fi
         
         # Display "items above" indicator
         if [[ $view_offset -gt 0 ]]; then
             print_color "$DIM" "  ... $((view_offset)) more item(s) above ..."
         else
-            # Print a blank line if no "above" indicator to maintain consistent spacing,
-            # but only if there's potential for scrolling (more items than fit)
-            if [[ $num_filtered -gt $menu_max_display_lines ]]; then
-                 echo "" # Or some other placeholder to keep layout steady
-            fi
+            if [[ $num_filtered -gt $menu_max_display_lines && $menu_max_display_lines -gt 0 ]]; then echo ""; fi # Keep spacing if scrollable
         fi
 
         # Display filtered items within the viewport
-        local display_loop_end_index=$((view_offset + menu_max_display_lines - 1))
-        if [[ $display_loop_end_index -ge $num_filtered ]]; then
-            display_loop_end_index=$((num_filtered - 1))
-        fi
+        if [[ $menu_max_display_lines -gt 0 ]]; then
+            local display_loop_end_index=$((view_offset + menu_max_display_lines - 1))
+            if [[ $display_loop_end_index -ge $num_filtered ]]; then
+                display_loop_end_index=$((num_filtered - 1))
+            fi
 
-        for (( i=view_offset; i <= display_loop_end_index && i < num_filtered; i++ )); do
-            local item="${filtered[$i]}"
-            local prefix="  "
-            local suffix=""
-            local is_currently_selected=false
-            local is_highlighted=false
-            local is_show_details=false
-            
-            # Check if this is a "Show Details" item
-            if [[ "$item" =~ -\ Show\ Details$ ]]; then
-                is_show_details=true
-            fi
-            
-            # Check if selected for execution
-            if is_selected "$item"; then
-                suffix=" [✓]"
-                is_currently_selected=true
-            fi
-            
-            # Check if currently highlighted (cursor is on it)
-            if [[ $i -eq $selected ]]; then
-                prefix="► "
-                is_highlighted=true
-            fi
-            
-            # Display with appropriate colors
-            if [[ "$is_currently_selected" == "true" && "$is_highlighted" == "true" ]]; then
-                # Selected AND highlighted (actionable item): bold green with bright arrow
-                print_color "$BOLD$GREEN" "${prefix}${item}${suffix}"
-            elif [[ "$is_currently_selected" == "true" ]]; then
-                # Selected but not highlighted (actionable item): green with checkmark
-                print_color "$GREEN" "${prefix}${item}${suffix}"
-            elif [[ "$is_highlighted" == "true" && "$is_show_details" == "true" ]]; then
-                # Highlighted "Show Details": bold purple with arrow
-                print_color "$BOLD$PURPLE" "${prefix}${item}${suffix}"
-            elif [[ "$is_highlighted" == "true" ]]; then
-                # Highlighted but not selected (actionable item): cyan with arrow
-                print_color "$CYAN" "${prefix}${item}${suffix}"
-            elif [[ "$is_show_details" == "true" ]]; then
-                # "Show Details" items (not highlighted): yellow
-                print_color "$YELLOW" "${prefix}${item}${suffix}"
-            else
-                # Normal actionable items (not highlighted, not selected): default color
-                echo "  ${item}${suffix}"
-            fi
-        done
+            for (( i=view_offset; i <= display_loop_end_index && i < num_filtered; i++ )); do
+                local item="${filtered[$i]}"
+                local prefix="  "
+                local suffix=""
+                local is_currently_selected=false
+                local is_highlighted=false
+                local is_show_details=false
+                
+                if [[ "$item" =~ "- Show Details"$ ]]; then is_show_details=true; fi
+                if is_selected "$item"; then suffix=" [✓]"; is_currently_selected=true; fi
+                if [[ $i -eq $selected ]]; then prefix="► "; is_highlighted=true; fi
+                
+                if [[ "$is_currently_selected" == "true" && "$is_highlighted" == "true" ]]; then
+                    print_color "$BOLD$GREEN" "${prefix}${item}${suffix}"
+                elif [[ "$is_currently_selected" == "true" ]]; then
+                    print_color "$GREEN" "${prefix}${item}${suffix}"
+                elif [[ "$is_highlighted" == "true" && "$is_show_details" == "true" ]]; then
+                    print_color "$BOLD$PURPLE" "${prefix}${item}${suffix}"
+                elif [[ "$is_highlighted" == "true" ]]; then
+                    print_color "$CYAN" "${prefix}${item}${suffix}"
+                elif [[ "$is_show_details" == "true" ]]; then
+                    print_color "$YELLOW" "${prefix}${item}${suffix}"
+                else
+                    echo "  ${item}${suffix}"
+                fi
+            done
+        fi
         
-        if [[ $num_filtered -eq 0 ]]; then
+        if [[ $num_filtered -eq 0 && $menu_max_display_lines -gt 0 ]]; then
             print_color "$RED" "No matches found"
         fi
 
         # Display "items below" indicator
-        local items_actually_shown=0
-        if [[ $num_filtered -gt 0 ]]; then
-            items_actually_shown=$((display_loop_end_index - view_offset + 1))
+        local items_actually_shown_in_viewport=0
+        if [[ $num_filtered -gt 0 && $menu_max_display_lines -gt 0 ]]; then
+             local end_idx_for_shown_calc=$((view_offset + menu_max_display_lines -1))
+             if [[ $end_idx_for_shown_calc -ge $num_filtered ]]; then end_idx_for_shown_calc=$((num_filtered -1)); fi
+             if [[ $end_idx_for_shown_calc -ge $view_offset ]]; then # Ensure start is not past end
+                items_actually_shown_in_viewport=$((end_idx_for_shown_calc - view_offset + 1))
+             fi
         fi
 
-        if [[ $num_filtered -gt 0 && $((view_offset + items_actually_shown)) -lt $num_filtered ]]; then
-            local items_below=$((num_filtered - (view_offset + items_actually_shown)))
+        if [[ $num_filtered -gt 0 && $menu_max_display_lines -gt 0 && $((view_offset + items_actually_shown_in_viewport)) -lt $num_filtered ]]; then
+            local items_below=$((num_filtered - (view_offset + items_actually_shown_in_viewport)))
             print_color "$DIM" "  ... $((items_below)) more item(s) below ..."
         else
-            # Print a blank line if no "below" indicator to maintain consistent spacing
-            # but only if there's potential for scrolling
-             if [[ $num_filtered -gt $menu_max_display_lines ]]; then
-                 echo ""
-            fi
+            if [[ $num_filtered -gt $menu_max_display_lines && $menu_max_display_lines -gt 0 ]]; then echo ""; fi # Keep spacing if scrollable
         fi
         
+        # Key handling (omitted for brevity in this thought, but it's the same as before)
+
         # Read user input with enhanced key detection
         unset key
         IFS= read -rsn1 key 2>/dev/null || continue
