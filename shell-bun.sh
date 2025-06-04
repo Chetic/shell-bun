@@ -780,7 +780,28 @@ show_unified_menu() {
     local prev_filter=""
     local first_draw=true
     local need_full_clear=false
+
+    # Scrolling and viewport variables
+    local terminal_height
+    terminal_height=$(tput lines 2>/dev/null || echo 24) # Default to 24 if tput fails
+    local original_header_content_lines=10 # Lines for FULL title, help, filter, selected status, and blank lines
+    local scroll_indicator_lines=2 # Reserve 2 lines for "items above" and "items below" indicators
+    local min_menu_items_display=3 # Minimum number of items to try and display
+    local min_height_for_title_box=15 # Threshold to hide title box
+
+    local effective_header_lines=$original_header_content_lines
+    local show_title_box=true
+    if [[ $terminal_height -lt $min_height_for_title_box ]]; then
+        effective_header_lines=$((original_header_content_lines - 4)) # 3 for box, 1 for blank line after
+        show_title_box=false
+    fi
     
+    local menu_max_display_lines=$((terminal_height - effective_header_lines - scroll_indicator_lines))
+    if [[ $menu_max_display_lines -lt $min_menu_items_display ]]; then
+        menu_max_display_lines=$min_menu_items_display
+    fi
+    local view_offset=0 # Starting index of the visible part of the filtered items
+
     # Build menu items
     for app in "${APPS[@]}"; do
         # Get all actions for this app and create menu items
@@ -800,51 +821,36 @@ show_unified_menu() {
     trap 'printf "\033[?25h"' EXIT
     
     while true; do
-        # Check if we need a full clear (only for major changes, not filter typing)
+        # Screen refresh logic
         if [[ "$first_draw" == "true" ]] || [[ "$need_full_clear" == "true" ]]; then
             clear
             first_draw=false
             need_full_clear=false
         else
-            # Move cursor to home position (top-left corner)
-            printf '\033[H'
+            # Use the 'clear' command for all subsequent screen refreshes
+            clear
         fi
         
         # Track if filter changed for content clearing
-        local filter_changed=false
+        local filter_changed=false # This flag might still be useful for logic other than clearing
         if [[ "$filter" != "$prev_filter" ]]; then
             filter_changed=true
         fi
         prev_filter="$filter"
-        print_color "$BLUE" "╔══════════════════════════════════════════════════════════════════════════════════════╗"
-        print_color "$BLUE" "║          Shell-Bun by Fredrik Reveny (https://github.com/Chetic/shell-bun/)          ║"
-        print_color "$BLUE" "╚══════════════════════════════════════════════════════════════════════════════════════╝"
-        echo
-        print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: jump 10 lines | Type: filter | Space: select | Enter: execute | ESC: quit"
+
+        if [[ "$show_title_box" == "true" ]]; then
+            print_color "$BLUE" "╔══════════════════════════════════════════════════════════════════════════════════════╗"
+            print_color "$BLUE" "║          Shell-Bun by Fredrik Reveny (https://github.com/Chetic/shell-bun/)          ║"
+            print_color "$BLUE" "╚══════════════════════════════════════════════════════════════════════════════════════╝"
+            echo
+        fi
+
+        print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: page | Type: filter | Space: select | Enter: execute | ESC: quit"
         print_color "$CYAN" "Shortcuts: '+': select visible | '-': deselect visible | Delete: clear filter | Enter: run current or selected"
         echo
-        
-        # Clear content area if filter changed or selections changed (but not full screen to avoid flicker)
-        if [[ "$filter_changed" == "true" ]] || [[ "$need_full_clear" == "true" && "$first_draw" == "false" ]]; then
-            printf '\033[J'  # Clear from cursor to end of screen
-        fi
-        
-        if [[ -n "$filter" ]]; then
-            print_color "$YELLOW" "Filter: $filter"
-        else
-            print_color "$DIM" "Filter: (type to search)"
-        fi
-        
-        if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
-            print_color "$GREEN" "Selected: ${#SELECTED_ITEMS[@]} items"
-        else
-            print_color "$DIM" "Selected: none"
-        fi
-        echo
-        
+
         # Filter and display matching commands
         local -a filtered=()
-        local display_index=0
         
         for item in "${menu_items[@]}"; do
             if [[ -z "$filter" ]] || [[ "${item,,}" == *"${filter,,}"* ]]; then
@@ -852,16 +858,61 @@ show_unified_menu() {
             fi
         done
         
-        # Adjust selected index if it's out of bounds
-        if [[ $selected -ge ${#filtered[@]} ]] && [[ ${#filtered[@]} -gt 0 ]]; then
-            selected=$((${#filtered[@]} - 1))
+        local num_filtered=${#filtered[@]}
+
+        # Adjust 'selected' index to be within bounds of filtered items
+        if [[ $num_filtered -eq 0 ]]; then
+            selected=0 # No items, selected is 0
+        else
+            if [[ $selected -ge $num_filtered ]]; then
+                selected=$((num_filtered - 1))
+            fi
+            if [[ $selected -lt 0 ]]; then # Should not happen if num_filtered > 0
+                selected=0
+            fi
         fi
-        if [[ $selected -lt 0 ]]; then
-            selected=0
+
+        # Calculate view_offset to keep 'selected' item in view and for scrolling
+        if [[ $num_filtered -le $menu_max_display_lines ]]; then
+            view_offset=0 # All items fit, so view starts at 0
+        else
+            # If selected item is above current view
+            if [[ $selected -lt $view_offset ]]; then
+                view_offset=$selected
+            # If selected item is below current view (or at the last line of it)
+            elif [[ $selected -ge $((view_offset + menu_max_display_lines)) ]]; then
+                view_offset=$((selected - menu_max_display_lines + 1))
+            fi
+
+            # Clamp view_offset to ensure it's valid
+            if [[ $view_offset -lt 0 ]]; then
+                view_offset=0
+            fi
+            # Ensure view_offset doesn't go too far if scrolling near the end
+            if [[ $((view_offset + menu_max_display_lines)) -gt $num_filtered ]]; then
+                view_offset=$((num_filtered - menu_max_display_lines))
+                if [[ $view_offset -lt 0 ]]; then view_offset=0; fi # Handles num_filtered < menu_max_display_lines
+            fi
         fi
         
-        # Display filtered items
-        for i in "${!filtered[@]}"; do
+        # Display "items above" indicator
+        if [[ $view_offset -gt 0 ]]; then
+            print_color "$DIM" "  ... $((view_offset)) more item(s) above ..."
+        else
+            # Print a blank line if no "above" indicator to maintain consistent spacing,
+            # but only if there's potential for scrolling (more items than fit)
+            if [[ $num_filtered -gt $menu_max_display_lines ]]; then
+                 echo "" # Or some other placeholder to keep layout steady
+            fi
+        fi
+
+        # Display filtered items within the viewport
+        local display_loop_end_index=$((view_offset + menu_max_display_lines - 1))
+        if [[ $display_loop_end_index -ge $num_filtered ]]; then
+            display_loop_end_index=$((num_filtered - 1))
+        fi
+
+        for (( i=view_offset; i <= display_loop_end_index && i < num_filtered; i++ )); do
             local item="${filtered[$i]}"
             local prefix="  "
             local suffix=""
@@ -880,8 +931,8 @@ show_unified_menu() {
                 is_currently_selected=true
             fi
             
-            # Check if currently highlighted
-            if [[ $i -eq $selected ]] && [[ ${#filtered[@]} -gt 0 ]]; then
+            # Check if currently highlighted (cursor is on it)
+            if [[ $i -eq $selected ]]; then
                 prefix="► "
                 is_highlighted=true
             fi
@@ -896,7 +947,7 @@ show_unified_menu() {
             elif [[ "$is_highlighted" == "true" && "$is_show_details" == "true" ]]; then
                 # Highlighted "Show Details": purple/magenta with arrow
                 print_color "$PURPLE" "${prefix}${item}${suffix}"
-            elif [[ "$is_highlighted" == "true" ]]; then
+            elif [[ "$is_highlighted" == "true" ]];then
                 # Highlighted but not selected: cyan with arrow
                 print_color "$CYAN" "${prefix}${item}${suffix}"
             elif [[ "$is_show_details" == "true" ]]; then
@@ -908,12 +959,26 @@ show_unified_menu() {
             fi
         done
         
-        if [[ ${#filtered[@]} -eq 0 ]]; then
+        if [[ $num_filtered -eq 0 ]]; then
             print_color "$RED" "No matches found"
         fi
-        
-        # Clear any remaining lines from previous draws to prevent artifacts
-        printf '\033[J'
+
+        # Display "items below" indicator
+        local items_actually_shown=0
+        if [[ $num_filtered -gt 0 ]]; then
+            items_actually_shown=$((display_loop_end_index - view_offset + 1))
+        fi
+
+        if [[ $num_filtered -gt 0 && $((view_offset + items_actually_shown)) -lt $num_filtered ]]; then
+            local items_below=$((num_filtered - (view_offset + items_actually_shown)))
+            print_color "$DIM" "  ... $((items_below)) more item(s) below ..."
+        else
+            # Print a blank line if no "below" indicator to maintain consistent spacing
+            # but only if there's potential for scrolling
+             if [[ $num_filtered -gt $menu_max_display_lines ]]; then
+                 echo ""
+            fi
+        fi
         
         # Read user input with enhanced key detection
         unset key
@@ -989,26 +1054,24 @@ show_unified_menu() {
                     read -rsn1 -t 0.1 final_char 2>/dev/null
                     if [[ "$final_char" == "~" ]]; then
                         debug_log "Page Up pressed"
-                        # Jump up by 10 lines
-                        new_selected=$((selected - 10))
-                        if [[ $new_selected -lt 0 ]]; then
-                            selected=0
-                        else
-                            selected=$new_selected
+                        if [[ $num_filtered -gt 0 ]]; then
+                            selected=$((selected - menu_max_display_lines))
+                            if [[ $selected -lt 0 ]]; then selected=0; fi
                         fi
+                        # view_offset adjustment will happen at the start of the next loop iteration
                     fi
                 elif [[ "$arrows" == "[6" ]]; then
                     # Page Down - read the final ~ character
                     read -rsn1 -t 0.1 final_char 2>/dev/null
                     if [[ "$final_char" == "~" ]]; then
                         debug_log "Page Down pressed"
-                        # Jump down by 10 lines
-                        new_selected=$((selected + 10))
-                        if [[ $new_selected -ge ${#filtered[@]} ]] && [[ ${#filtered[@]} -gt 0 ]]; then
-                            selected=$((${#filtered[@]} - 1))
-                        else
-                            selected=$new_selected
+                        if [[ $num_filtered -gt 0 ]]; then
+                            selected=$((selected + menu_max_display_lines))
+                            if [[ $selected -ge $num_filtered ]]; then
+                                selected=$((num_filtered - 1))
+                            fi
                         fi
+                        # view_offset adjustment will happen at the start of the next loop iteration
                     fi
                 elif [[ "$arrows" == "[3" ]]; then
                     # Delete key sequence - read final character
@@ -1148,8 +1211,6 @@ show_unified_menu() {
                 need_full_clear=true
                 action_taken=true
                 ;;
-
-
         esac
         
         # If no action was taken by special keys, handle as filter input
