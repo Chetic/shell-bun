@@ -485,13 +485,88 @@ show_log_viewer() {
     sorted_results+=("${success_results[@]}")
     
     local selected=0
+    local first_draw=true # For initial clear
     
+    # Scrolling and viewport variables
+    local terminal_height
+    terminal_height=$(tput lines 2>/dev/null || echo 24) # Default to 24 if tput fails
+    # Estimate lines for header/footer: 
+    # 1 for "Select a log file..."
+    # 1 for blank line
+    # 1 for help text "Use ↑/↓ arrows..."
+    # 2 for scroll indicators (potential)
+    # = 6 lines
+    local header_footer_lines=6 
+    local min_menu_items_display=3 
+    
+    local menu_max_display_lines=$((terminal_height - header_footer_lines - 1)) # -1 to leave a blank line at the bottom
+    if [[ $menu_max_display_lines -lt $min_menu_items_display ]]; then
+        menu_max_display_lines=$min_menu_items_display
+    fi
+    local view_offset=0 # Starting index of the visible part of the sorted_results
+
+    # Hide cursor to prevent flickering
+    printf '\033[?25l'
+    # Ensure cursor is shown on exit (also done in show_unified_menu, good practice here too)
+    trap 'printf "\033[?25h"' EXIT
+
     while true; do
-        clear
+        if [[ "$first_draw" == "true" ]]; then
+            clear
+            first_draw=false
+        else
+            clear
+        fi
+        
+        local num_logs=${#sorted_results[@]}
+
+        # Adjust 'selected' index to be within bounds
+        if [[ $num_logs -eq 0 ]]; then
+            selected=0
+        else
+            if [[ $selected -ge $num_logs ]]; then
+                selected=$((num_logs - 1))
+            fi
+            if [[ $selected -lt 0 ]]; then
+                selected=0
+            fi
+        fi
+
+        # Calculate view_offset
+        if [[ $num_logs -le $menu_max_display_lines ]]; then
+            view_offset=0
+        else
+            if [[ $selected -lt $view_offset ]]; then
+                view_offset=$selected
+            elif [[ $selected -ge $((view_offset + menu_max_display_lines)) ]]; then
+                view_offset=$((selected - menu_max_display_lines + 1))
+            fi
+
+            if [[ $view_offset -lt 0 ]]; then
+                view_offset=0
+            fi
+            if [[ $((view_offset + menu_max_display_lines)) -gt $num_logs ]]; then
+                view_offset=$((num_logs - menu_max_display_lines))
+                if [[ $view_offset -lt 0 ]]; then view_offset=0; fi
+            fi
+        fi
+
         print_color "$CYAN" "📋 Select a log file to view (q to quit):"
         echo
+
+        # Display "items above" indicator
+        if [[ $view_offset -gt 0 ]]; then
+            print_color "$DIM" "  ... $((view_offset)) more log(s) above ..."
+        else
+            if [[ $num_logs -gt $menu_max_display_lines ]]; then echo ""; fi
+        fi
         
-        for i in "${!sorted_results[@]}"; do
+        local display_loop_end_index=$((view_offset + menu_max_display_lines - 1))
+        if [[ $display_loop_end_index -ge $num_logs ]]; then
+            display_loop_end_index=$((num_logs - 1))
+        fi
+
+        for (( i=view_offset; i <= display_loop_end_index && i < num_logs; i++ )); do
             local result="${sorted_results[$i]}"
             local prefix="  "
             
@@ -506,29 +581,53 @@ show_log_viewer() {
             fi
         done
         
+        if [[ $num_logs -eq 0 ]]; then # Should not happen given initial check, but good for safety
+            print_color "$YELLOW" "No log files to display."
+        fi
+
+        # Display "items below" indicator
+        local items_actually_shown=0
+        if [[ $num_logs -gt 0 ]]; then
+            items_actually_shown=$((display_loop_end_index - view_offset + 1))
+        fi
+        if [[ $num_logs -gt 0 && $((view_offset + items_actually_shown)) -lt $num_logs ]]; then
+            local items_below=$((num_logs - (view_offset + items_actually_shown)))
+            print_color "$DIM" "  ... $((items_below)) more log(s) below ..."
+        else
+            if [[ $num_logs -gt $menu_max_display_lines ]]; then echo ""; fi
+        fi
+        
         echo
-        print_color "$DIM" "Use ↑/↓ arrows to navigate, Enter to view log, q to return to menu, ESC to exit"
+        print_color "$DIM" "Use ↑/↓ arrows, PgUp/PgDn, Enter to view, q to menu, ESC to exit"
         
         # Read user input
         read -rsn1 key 2>/dev/null
         
         case "$key" in
             $'\x1b') # Escape key or arrow keys
-                # Read the next part to distinguish between ESC and arrow keys
                 read -rsn2 -t 0.1 arrows 2>/dev/null
-                if [[ "$arrows" == "[A" ]]; then
-                    # Up arrow
-                    if [[ $selected -gt 0 ]]; then
-                        ((selected--))
+                if [[ "$arrows" == "[A" ]]; then # Up arrow
+                    if [[ $selected -gt 0 ]]; then ((selected--)); fi
+                elif [[ "$arrows" == "[B" ]]; then # Down arrow
+                    if [[ $selected -lt $((num_logs - 1)) ]]; then ((selected++)); fi
+                elif [[ "$arrows" == "[5" ]]; then # Page Up
+                    read -rsn1 -t 0.1 final_char 2>/dev/null
+                    if [[ "$final_char" == "~" ]]; then
+                        if [[ $num_logs -gt 0 ]]; then
+                            selected=$((selected - menu_max_display_lines))
+                            if [[ $selected -lt 0 ]]; then selected=0; fi
+                        fi
                     fi
-                elif [[ "$arrows" == "[B" ]]; then
-                    # Down arrow
-                    if [[ $selected -lt $((${#sorted_results[@]} - 1)) ]]; then
-                        ((selected++))
+                elif [[ "$arrows" == "[6" ]]; then # Page Down
+                    read -rsn1 -t 0.1 final_char 2>/dev/null
+                    if [[ "$final_char" == "~" ]]; then
+                        if [[ $num_logs -gt 0 ]]; then
+                            selected=$((selected + menu_max_display_lines))
+                            if [[ $selected -ge $num_logs ]]; then selected=$((num_logs - 1)); fi
+                        fi
                     fi
-                else
-                    # Plain ESC key - exit script
-                    printf '\033[?25h'  # Show cursor
+                else # Plain ESC key
+                    printf '\033[?25h'
                     clear
                     print_color "$YELLOW" "Goodbye!"
                     exit 0
@@ -784,7 +883,7 @@ show_unified_menu() {
     # Scrolling and viewport variables
     local terminal_height
     terminal_height=$(tput lines 2>/dev/null || echo 24) # Default to 24 if tput fails
-    local original_header_content_lines=10 # Lines for FULL title, help, filter, selected status, and blank lines
+    local original_header_content_lines=9 # Reduced from 10, as one blank line after filter/selection will be removed
     local scroll_indicator_lines=2 # Reserve 2 lines for "items above" and "items below" indicators
     local min_menu_items_display=3 # Minimum number of items to try and display
     local min_height_for_title_box=15 # Threshold to hide title box
@@ -796,7 +895,7 @@ show_unified_menu() {
         show_title_box=false
     fi
     
-    local menu_max_display_lines=$((terminal_height - effective_header_lines - scroll_indicator_lines))
+    local menu_max_display_lines=$((terminal_height - effective_header_lines - scroll_indicator_lines - 1)) # -1 to leave a blank line at the bottom
     if [[ $menu_max_display_lines -lt $min_menu_items_display ]]; then
         menu_max_display_lines=$min_menu_items_display
     fi
@@ -845,10 +944,24 @@ show_unified_menu() {
             echo
         fi
 
+        # Navigation help lines (always print both)
         print_color "$CYAN" "Navigation: ↑/↓ arrows | PgUp/PgDn: page | Type: filter | Space: select | Enter: execute | ESC: quit"
         print_color "$CYAN" "Shortcuts: '+': select visible | '-': deselect visible | Delete: clear filter | Enter: run current or selected"
         echo
 
+        # Display filter status and selection count
+        if [[ -n "$filter" ]]; then
+            print_color "$YELLOW" "Filter: $filter"
+        else
+            print_color "$DIM" "Filter: (type to search)"
+        fi
+        
+        if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
+            print_color "$GREEN" "Selected: ${#SELECTED_ITEMS[@]} items"
+        else
+            print_color "$DIM" "Selected: none"
+        fi
+        
         # Filter and display matching commands
         local -a filtered=()
         
@@ -939,22 +1052,22 @@ show_unified_menu() {
             
             # Display with appropriate colors
             if [[ "$is_currently_selected" == "true" && "$is_highlighted" == "true" ]]; then
-                # Selected AND highlighted: bold green with bright arrow
+                # Selected AND highlighted (actionable item): bold green with bright arrow
                 print_color "$BOLD$GREEN" "${prefix}${item}${suffix}"
             elif [[ "$is_currently_selected" == "true" ]]; then
-                # Selected but not highlighted: green with checkmark
+                # Selected but not highlighted (actionable item): green with checkmark
                 print_color "$GREEN" "${prefix}${item}${suffix}"
             elif [[ "$is_highlighted" == "true" && "$is_show_details" == "true" ]]; then
-                # Highlighted "Show Details": purple/magenta with arrow
-                print_color "$PURPLE" "${prefix}${item}${suffix}"
-            elif [[ "$is_highlighted" == "true" ]];then
-                # Highlighted but not selected: cyan with arrow
+                # Highlighted "Show Details": bold purple with arrow
+                print_color "$BOLD$PURPLE" "${prefix}${item}${suffix}"
+            elif [[ "$is_highlighted" == "true" ]]; then
+                # Highlighted but not selected (actionable item): cyan with arrow
                 print_color "$CYAN" "${prefix}${item}${suffix}"
             elif [[ "$is_show_details" == "true" ]]; then
-                # "Show Details" items: dimmed when not highlighted
-                print_color "$DIM" "${prefix}${item}${suffix}"
+                # "Show Details" items (not highlighted): yellow
+                print_color "$YELLOW" "${prefix}${item}${suffix}"
             else
-                # Normal items: default color
+                # Normal actionable items (not highlighted, not selected): default color
                 echo "  ${item}${suffix}"
             fi
         done
