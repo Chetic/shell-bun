@@ -152,6 +152,7 @@ declare -A APP_LOG_DIR=()      # Key: "app", Value: "log directory path"
 declare -a SELECTED_ITEMS=()
 declare -a EXECUTION_RESULTS=() # Track execution results for log viewing
 GLOBAL_LOG_DIR=""              # Global log directory from config
+GLOBAL_CONTAINER_COMMAND=""    # Global container command from config
 
 # Function to print colored output
 print_color() {
@@ -259,6 +260,9 @@ parse_config() {
             if [[ -z "$current_app" && "$key" == "log_dir" ]]; then
                 # Global log_dir setting (outside any app section)
                 GLOBAL_LOG_DIR="$value"
+            elif [[ -z "$current_app" && "$key" == "container" ]]; then
+                # Global container command
+                GLOBAL_CONTAINER_COMMAND="$value"
             elif [[ -n "$current_app" && "$key" == "working_dir" ]]; then
                 # Special handling for working_dir
                 APP_WORKING_DIR["$current_app"]="$value"
@@ -283,6 +287,17 @@ parse_config() {
     if [[ ${#APPS[@]} -eq 0 ]]; then
         print_color "$RED" "Error: No applications found in configuration file!"
         exit 1
+    fi
+}
+
+# Function to build the effective command, optionally wrapping in a container command
+get_effective_command() {
+    local base_command="$1"
+
+    if [[ -n "$GLOBAL_CONTAINER_COMMAND" ]]; then
+        printf '%s\n' "$GLOBAL_CONTAINER_COMMAND $base_command"
+    else
+        printf '%s\n' "$base_command"
     fi
 }
 
@@ -328,6 +343,9 @@ show_app_details() {
     print_color "$CYAN" "=== $app ==="
     echo "Working Dir:    $working_dir"
     echo "Log Dir:        $log_dir"
+    if [[ -n "$GLOBAL_CONTAINER_COMMAND" ]]; then
+        echo "Container Cmd:  $GLOBAL_CONTAINER_COMMAND (global)"
+    fi
     echo
     print_color "$YELLOW" "Available Actions:"
     
@@ -351,10 +369,12 @@ execute_command() {
     local action="$2"
     local show_output="${3:-false}"  # New parameter: whether to show output in terminal
     local log_file_var="$4"          # Variable name to store log file path
-    local command="${APP_ACTIONS[$app:$action]:-}"
+    local base_command="${APP_ACTIONS[$app:$action]:-}"
+    local effective_command
+    effective_command=$(get_effective_command "$base_command")
     local action_name="$action"
-    
-    if [[ -z "$command" ]]; then
+
+    if [[ -z "$base_command" ]]; then
         log_execution "$app" "$action_name" "error"
         print_color "$RED" "Error: No command configured for '$action' in $app"
         return 1
@@ -393,21 +413,21 @@ execute_command() {
         fi
     fi
     
-    log_execution "$app" "$action_name" "start" "$command"
-    
+    log_execution "$app" "$action_name" "start" "$effective_command"
+
     # Execute the command in a subshell with proper working directory
     local exit_code
     if [[ $CI_MODE -eq 1 ]]; then
         # CI mode: just print to terminal
-        (cd "$working_dir" && bash -c "$command")
+        (cd "$working_dir" && bash -c "$effective_command")
         exit_code=$?
     elif [[ "$show_output" == "true" ]]; then
         # Interactive single execution: show output and log to file
-        (cd "$working_dir" && bash -c "$command" 2>&1 | tee "$log_file")
+        (cd "$working_dir" && bash -c "$effective_command" 2>&1 | tee "$log_file")
         exit_code=${PIPESTATUS[0]}
     else
         # Interactive parallel execution: only log to file
-        (cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1)
+        (cd "$working_dir" && bash -c "$effective_command" > "$log_file" 2>&1)
         exit_code=$?
     fi
     
@@ -705,8 +725,10 @@ execute_parallel() {
             local action="${BASH_REMATCH[2]}"
             
             # Get and display the command
-            local command="${APP_ACTIONS[$app:$action]:-}"
-            log_execution "$app" "$action" "start" "$command"
+            local base_command="${APP_ACTIONS[$app:$action]:-}"
+            local effective_command
+            effective_command=$(get_effective_command "$base_command")
+            log_execution "$app" "$action" "start" "$effective_command"
             
             # Generate log file path
             local log_file=$(generate_log_file_path "$app" "$action")
@@ -731,9 +753,11 @@ execute_parallel() {
                 fi
                 
                 # Execute command
-                local command="${APP_ACTIONS[$app:$action]:-}"
-                if [[ -n "$command" && -d "$working_dir" ]]; then
-                    cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1
+                local base_command="${APP_ACTIONS[$app:$action]:-}"
+                local effective_command
+                effective_command=$(get_effective_command "$base_command")
+                if [[ -n "$base_command" && -d "$working_dir" ]]; then
+                    cd "$working_dir" && bash -c "$effective_command" > "$log_file" 2>&1
                 else
                     echo "Error: Command not found or working directory invalid" > "$log_file" 2>&1
                     exit 1

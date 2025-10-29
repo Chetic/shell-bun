@@ -23,6 +23,7 @@ An interactive bash script for managing build environments with advanced feature
 - **Multi-Selection**: Select multiple commands and execute them in parallel
 - **Simple Configuration Format**: Define applications and their commands in a clean INI-style format
 - **Working Directory Support**: Specify custom working directories for each application
+- **Container Command Support**: Run every configured command through a reusable container wrapper
 - **Built-in Status Messages**: Automatic progress logging with emojis and colors
 - **Parallel Execution**: Run multiple commands simultaneously with execution summary
 - **Automatic Logging**: Commands logged to timestamped files with configurable log directories
@@ -128,6 +129,7 @@ The configuration file uses a simple INI-style format:
 
 # Global settings (before any app sections)
 log_dir=logs  # Global log directory for all apps
+container=docker run --rm my-build-image  # Optional: wrap commands in a container
 
 [ApplicationName]
 # Define any action names - completely customizable!
