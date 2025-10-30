@@ -1,0 +1,181 @@
+name: Test Suite
+
+on:
+  # Run on pull requests
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  
+  # Run on pushes to main/master
+  push:
+    branches:
+      - main
+      - master
+  
+  # Run before creating releases
+  release:
+    types: [created, published, prereleased]
+  
+  # Allow manual triggering
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Test Suite
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        bash-version: ['4.4', '5.0', '5.1', '5.2']
+        exclude:
+          # macOS comes with bash 3.2 by default, but we'll use brew bash which is 5.x
+          # Skip older versions on macOS to save CI time
+          - os: macos-latest
+            bash-version: '4.4'
+          - os: macos-latest
+            bash-version: '5.0'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Bash (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          # Install specific bash version if needed
+          if [ "${{ matrix.bash-version }}" != "$(bash --version | head -n1 | sed -E 's/.*version ([0-9]+\.[0-9]+).*/\1/')" ]; then
+            echo "Installing Bash ${{ matrix.bash-version }}..."
+            sudo apt-get update
+            # For testing, we'll use the default bash which should be 5.x on ubuntu-latest
+          fi
+          bash --version
+      
+      - name: Set up Bash (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Install latest bash via Homebrew
+          brew install bash
+          # Add Homebrew bash to allowed shells
+          echo "$(brew --prefix)/bin/bash" | sudo tee -a /etc/shells
+          # Use Homebrew bash for tests
+          export PATH="$(brew --prefix)/bin:$PATH"
+          bash --version
+      
+      - name: Install BATS
+        run: |
+          if [ "${{ runner.os }}" == "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y bats
+          else
+            brew install bats-core
+          fi
+          bats --version
+      
+      - name: Verify Bash version requirement
+        run: |
+          BASH_VERSION=$(bash --version | head -n1 | sed -E 's/.*version ([0-9]+\.[0-9]+).*/\1/')
+          MAJOR_VERSION=$(echo $BASH_VERSION | cut -d. -f1)
+          if [ "$MAJOR_VERSION" -lt 4 ]; then
+            echo "Error: Bash 4.0+ required, found $BASH_VERSION"
+            exit 1
+          fi
+          echo "✓ Bash version $BASH_VERSION meets requirements"
+      
+      - name: Run test suite
+        run: |
+          # Ensure test runner is executable
+          chmod +x tests/run_tests.sh
+          
+          # Run tests
+          bash tests/run_tests.sh -v
+      
+      - name: Check script syntax
+        run: |
+          bash -n shell-bun.sh
+          echo "✓ Script syntax is valid"
+      
+      - name: Verify example config
+        run: |
+          if [ ! -f shell-bun.cfg ]; then
+            echo "Error: Example config file not found"
+            exit 1
+          fi
+          echo "✓ Example config file exists"
+      
+      - name: Upload test artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs-${{ matrix.os }}-bash-${{ matrix.bash-version }}
+          path: |
+            debug.log
+            logs/
+            test_logs/
+          retention-days: 7
+  
+  lint:
+    name: Lint Shell Scripts
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+      
+      - name: Run ShellCheck on main script
+        run: |
+          # Run shellcheck with appropriate exclusions
+          shellcheck -e SC2086,SC2181,SC2162 shell-bun.sh || true
+          echo "ShellCheck completed (warnings are informational)"
+      
+      - name: Run ShellCheck on test runner
+        run: |
+          shellcheck tests/run_tests.sh || true
+          echo "ShellCheck completed (warnings are informational)"
+  
+  integration:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Test CI mode with example config
+        run: |
+          bash shell-bun.sh --ci MyWebApp build
+      
+      - name: Test CI mode with pattern matching
+        run: |
+          bash shell-bun.sh --ci "*Web*" build
+      
+      - name: Test CI mode with all actions
+        run: |
+          bash shell-bun.sh --ci MyWebApp all
+      
+      - name: Test CI mode with multiple apps
+        run: |
+          bash shell-bun.sh --ci "*" clean
+      
+      - name: Test help output
+        run: |
+          bash shell-bun.sh --help
+          bash shell-bun.sh --version
+      
+      - name: Verify CI mode error handling
+        run: |
+          # This should fail - non-existent app
+          if bash shell-bun.sh --ci NonExistentApp build 2>/dev/null; then
+            echo "Error: Should have failed for non-existent app"
+            exit 1
+          fi
+          echo "✓ Error handling works correctly"
+

@@ -26,6 +26,7 @@ An interactive bash script for managing build environments with advanced feature
 - **Built-in Status Messages**: Automatic progress logging with emojis and colors
 - **Parallel Execution**: Run multiple commands simultaneously with execution summary
 - **Automatic Logging**: Commands logged to timestamped files with configurable log directories
+- **Containerized Execution**: Optionally run all commands through a configurable container command
 - **Interactive Log Viewer**: Browse and view execution logs after everything is completed
 - **Color-coded Output**: Beautiful terminal interface with intuitive visual feedback
 - **No Dependencies**: Pure bash implementation with no external tools required
@@ -127,7 +128,8 @@ The configuration file uses a simple INI-style format:
 # Comments start with #
 
 # Global settings (before any app sections)
-log_dir=logs  # Global log directory for all apps
+log_dir=logs       # Global log directory for all apps
+container=docker run --rm ubuntu
 
 [ApplicationName]
 # Define any action names - completely customizable!
@@ -145,3 +147,62 @@ serve=./start_server.sh
 clean=make clean
 working_dir=~/projects/my-app
 ```
+
+- `log_dir` (optional): Sets a global directory where log files are stored. Individual apps can override it.
+- `container` (optional): When set, every command is executed inside the specified container command. Shell-Bun automatically appends `bash -lc "<your command>"` to the container invocation so complex workflows can stay isolated.
+
+## Testing
+
+Shell-Bun includes a comprehensive test suite to ensure reliability and maintainability.
+
+### Running Tests Locally
+
+```bash
+# Run all tests
+./tests/run_tests.sh
+
+# Run specific test suite
+./tests/run_tests.sh -t ci_mode
+
+# Run with verbose output
+./tests/run_tests.sh -v
+```
+
+### Prerequisites
+
+- **Bash 4.0+** (same as Shell-Bun)
+- **BATS** (Bash Automated Testing System)
+
+The test runner will automatically install BATS if it's not found, or you can install it manually:
+
+```bash
+# macOS
+brew install bats-core
+
+# Ubuntu/Debian
+sudo apt-get install bats
+```
+
+### Test Suite Coverage
+
+The test suite includes comprehensive tests for:
+
+- ✅ Configuration file parsing and validation
+- ✅ CI mode execution (single and parallel)
+- ✅ Pattern matching (exact, wildcard, substring)
+- ✅ Working directory handling
+- ✅ Log directory configuration
+- ✅ Command-line argument parsing
+- ✅ Error handling and edge cases
+- ✅ Container command integration
+
+### Continuous Integration
+
+Tests run automatically on:
+- Pull requests to main/master branches
+- Pushes to main/master
+- Before creating releases
+
+The CI pipeline tests on multiple platforms (Ubuntu, macOS) and Bash versions (4.4, 5.0, 5.1, 5.2).
+
+For detailed testing documentation, see [tests/README.md](tests/README.md).

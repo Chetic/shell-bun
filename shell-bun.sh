@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #
 # Shell-Bun - Interactive build environment script
@@ -64,10 +64,10 @@ while [[ $# -gt 0 ]]; do
         --ci)
             CI_MODE=1
             shift
-            if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+            if [[ $# -gt 0 && ! "$1" =~ ^-- && ! "$1" =~ \.cfg$ ]]; then
                 CI_APP="$1"
                 shift
-                if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+                if [[ $# -gt 0 && ! "$1" =~ ^-- && ! "$1" =~ \.cfg$ ]]; then
                     CI_ACTIONS="$1"
                     shift
                 fi
@@ -152,6 +152,7 @@ declare -A APP_LOG_DIR=()      # Key: "app", Value: "log directory path"
 declare -a SELECTED_ITEMS=()
 declare -a EXECUTION_RESULTS=() # Track execution results for log viewing
 GLOBAL_LOG_DIR=""              # Global log directory from config
+CONTAINER_COMMAND=""           # Global container command from config
 
 # Function to print colored output
 print_color() {
@@ -259,6 +260,9 @@ parse_config() {
             if [[ -z "$current_app" && "$key" == "log_dir" ]]; then
                 # Global log_dir setting (outside any app section)
                 GLOBAL_LOG_DIR="$value"
+            elif [[ -z "$current_app" && "$key" == "container" ]]; then
+                # Global container command (outside any app section)
+                CONTAINER_COMMAND="$value"
             elif [[ -n "$current_app" && "$key" == "working_dir" ]]; then
                 # Special handling for working_dir
                 APP_WORKING_DIR["$current_app"]="$value"
@@ -328,6 +332,14 @@ show_app_details() {
     print_color "$CYAN" "=== $app ==="
     echo "Working Dir:    $working_dir"
     echo "Log Dir:        $log_dir"
+    
+    # Show container configuration
+    if [[ -n "$CONTAINER_COMMAND" ]]; then
+        echo "Container:      $CONTAINER_COMMAND"
+    else
+        echo "Container:      (none - runs on host)"
+    fi
+    
     echo
     print_color "$YELLOW" "Available Actions:"
     
@@ -339,7 +351,24 @@ show_app_details() {
         # Display each action and its command
         for action in $actions; do
             local command="${APP_ACTIONS[$app:$action]:-}"
-            printf "  %-20s: %s\n" "$action" "$command"
+            echo
+            print_color "$CYAN" "  $action:"
+            echo "    Command: $command"
+            
+            # Show how it will be executed (with or without container)
+            if [[ -n "$CONTAINER_COMMAND" ]]; then
+                local working_dir_for_display="${APP_WORKING_DIR[$app]:-}"
+                if [[ -n "$working_dir_for_display" ]]; then
+                    local container_cmd="cd $(printf '%q' "$working_dir_for_display") && $command"
+                    local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+                    echo "    Full cmd: $CONTAINER_COMMAND bash -lc $escaped_container_cmd"
+                else
+                    local escaped_command="$(printf '%q' "$command")"
+                    echo "    Full cmd: $CONTAINER_COMMAND bash -lc $escaped_command"
+                fi
+            else
+                echo "    Full cmd: bash -c $(printf '%q' "$command")"
+            fi
         done
     fi
     echo
@@ -362,25 +391,37 @@ execute_command() {
     
     # Get working directory - default to script directory if not specified
     local working_dir="${APP_WORKING_DIR[$app]:-}"
+    local working_dir_for_container="$working_dir"  # Store original for container use
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     
-    if [[ -z "$working_dir" ]]; then
-        working_dir="$script_dir"
-    fi
-    
-    # Expand tilde in working_dir if present
-    working_dir="${working_dir/#\~/$HOME}"
-    
-    # Make relative paths relative to script directory
-    if [[ ! "$working_dir" =~ ^/ ]]; then
-        working_dir="$script_dir/$working_dir"
-    fi
-    
-    # Check if working directory exists
-    if [[ ! -d "$working_dir" ]]; then
-        log_execution "$app" "$action_name" "error"
-        print_color "$RED" "Error: Working directory '$working_dir' does not exist for $app"
-        return 1
+    # When using container, working_dir is relative to the container's starting point
+    # When not using container, working_dir is relative to the script directory
+    if [[ -n "$CONTAINER_COMMAND" ]]; then
+        # Container mode: use working_dir as-is (relative to container's starting point)
+        # If no working_dir specified, don't cd at all in the container
+        if [[ -z "$working_dir_for_container" ]]; then
+            working_dir_for_container=""
+        fi
+    else
+        # Non-container mode: resolve paths relative to script directory
+        if [[ -z "$working_dir" ]]; then
+            working_dir="$script_dir"
+        fi
+        
+        # Expand tilde in working_dir if present
+        working_dir="${working_dir/#\~/$HOME}"
+        
+        # Make relative paths relative to script directory
+        if [[ ! "$working_dir" =~ ^/ ]]; then
+            working_dir="$script_dir/$working_dir"
+        fi
+        
+        # Check if working directory exists (only for non-container mode)
+        if [[ ! -d "$working_dir" ]]; then
+            log_execution "$app" "$action_name" "error"
+            print_color "$RED" "Error: Working directory '$working_dir' does not exist for $app"
+            return 1
+        fi
     fi
     
     # Generate log file path (unless in CI mode)
@@ -393,21 +434,72 @@ execute_command() {
         fi
     fi
     
-    log_execution "$app" "$action_name" "start" "$command"
+    # Build the full command that will be executed (for display purposes)
+    local full_command_display
+    local escaped_command="$(printf '%q' "$command")"
+    if [[ -n "$CONTAINER_COMMAND" ]]; then
+        if [[ -n "$working_dir_for_container" ]]; then
+            local container_cmd="cd $(printf '%q' "$working_dir_for_container") && $command"
+            local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+            full_command_display="$CONTAINER_COMMAND bash -lc $escaped_container_cmd"
+        else
+            full_command_display="$CONTAINER_COMMAND bash -lc $escaped_command"
+        fi
+    else
+        full_command_display="bash -c $escaped_command"
+    fi
+    
+    log_execution "$app" "$action_name" "start" "$full_command_display"
     
     # Execute the command in a subshell with proper working directory
     local exit_code
+    local escaped_command="$(printf '%q' "$command")"
+
     if [[ $CI_MODE -eq 1 ]]; then
         # CI mode: just print to terminal
-        (cd "$working_dir" && bash -c "$command")
+        if [[ -n "$CONTAINER_COMMAND" ]]; then
+            # Container mode: cd inside the container
+            if [[ -n "$working_dir_for_container" ]]; then
+                local container_cmd="cd $(printf '%q' "$working_dir_for_container") && $command"
+                local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+                (bash -c "$CONTAINER_COMMAND bash -lc $escaped_container_cmd")
+            else
+                (bash -c "$CONTAINER_COMMAND bash -lc $escaped_command")
+            fi
+        else
+            (cd "$working_dir" && bash -c "$command")
+        fi
         exit_code=$?
     elif [[ "$show_output" == "true" ]]; then
         # Interactive single execution: show output and log to file
-        (cd "$working_dir" && bash -c "$command" 2>&1 | tee "$log_file")
-        exit_code=${PIPESTATUS[0]}
+        if [[ -n "$CONTAINER_COMMAND" ]]; then
+            # Container mode: cd inside the container
+            if [[ -n "$working_dir_for_container" ]]; then
+                local container_cmd="cd $(printf '%q' "$working_dir_for_container") && $command"
+                local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+                (bash -c "$CONTAINER_COMMAND bash -lc $escaped_container_cmd" 2>&1 | tee "$log_file")
+            else
+                (bash -c "$CONTAINER_COMMAND bash -lc $escaped_command" 2>&1 | tee "$log_file")
+            fi
+            exit_code=${PIPESTATUS[0]}
+        else
+            (cd "$working_dir" && bash -c "$command" 2>&1 | tee "$log_file")
+            exit_code=${PIPESTATUS[0]}
+        fi
     else
         # Interactive parallel execution: only log to file
-        (cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1)
+        if [[ -n "$CONTAINER_COMMAND" ]]; then
+            # Container mode: cd inside the container
+            if [[ -n "$working_dir_for_container" ]]; then
+                local container_cmd="cd $(printf '%q' "$working_dir_for_container") && $command"
+                local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+                (bash -c "$CONTAINER_COMMAND bash -lc $escaped_container_cmd" > "$log_file" 2>&1)
+            else
+                (bash -c "$CONTAINER_COMMAND bash -lc $escaped_command" > "$log_file" 2>&1)
+            fi
+        else
+            (cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1)
+        fi
         exit_code=$?
     fi
     
@@ -423,7 +515,7 @@ execute_command() {
     fi
 }
 
-# Function to execute a single command with summary
+# Function to execute a single command
 execute_single() {
     local app="$1"
     local action="$2"
@@ -431,30 +523,9 @@ execute_single() {
     print_color "$BLUE" "📦 Executing: $app - $action"
     echo
     
-    local success_count=0
-    local failure_count=0
     local log_file=""
+    execute_command "$app" "$action" "true" "log_file"
     
-    if execute_command "$app" "$action" "true" "log_file"; then
-        success_count=1
-    else
-        failure_count=1
-    fi
-    
-    echo
-    print_color "$BOLD" "📊 Execution Summary:"
-    if [[ $success_count -gt 0 ]]; then
-        print_color "$GREEN" "✅ Successful: $success_count"
-        if [[ -n "$log_file" ]]; then
-            print_color "$CYAN" "📝 Log file: $log_file"
-        fi
-    fi
-    if [[ $failure_count -gt 0 ]]; then
-        print_color "$RED" "❌ Failed: $failure_count"
-        if [[ -n "$log_file" ]]; then
-            print_color "$CYAN" "📝 Log file: $log_file"
-        fi
-    fi
     echo
     echo "Press Enter to continue..."
     read
@@ -706,7 +777,24 @@ execute_parallel() {
             
             # Get and display the command
             local command="${APP_ACTIONS[$app:$action]:-}"
-            log_execution "$app" "$action" "start" "$command"
+            
+            # Build the full command that will be executed (for display purposes)
+            local working_dir_for_display="${APP_WORKING_DIR[$app]:-}"
+            local full_command_display
+            local escaped_command="$(printf '%q' "$command")"
+            if [[ -n "$CONTAINER_COMMAND" ]]; then
+                if [[ -n "$working_dir_for_display" ]]; then
+                    local container_cmd="cd $(printf '%q' "$working_dir_for_display") && $command"
+                    local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+                    full_command_display="$CONTAINER_COMMAND bash -lc $escaped_container_cmd"
+                else
+                    full_command_display="$CONTAINER_COMMAND bash -lc $escaped_command"
+                fi
+            else
+                full_command_display="bash -c $escaped_command"
+            fi
+            
+            log_execution "$app" "$action" "start" "$full_command_display"
             
             # Generate log file path
             local log_file=$(generate_log_file_path "$app" "$action")
@@ -716,27 +804,57 @@ execute_parallel() {
             (
                 # Get working directory
                 local working_dir="${APP_WORKING_DIR[$app]:-}"
+                local working_dir_for_container="$working_dir"  # Store original for container use
                 local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
                 
-                if [[ -z "$working_dir" ]]; then
-                    working_dir="$script_dir"
-                fi
-                
-                # Expand tilde in working_dir if present
-                working_dir="${working_dir/#\~/$HOME}"
-                
-                # Make relative paths relative to script directory
-                if [[ ! "$working_dir" =~ ^/ ]]; then
-                    working_dir="$script_dir/$working_dir"
+                # When using container, working_dir is relative to the container's starting point
+                # When not using container, working_dir is relative to the script directory
+                if [[ -n "$CONTAINER_COMMAND" ]]; then
+                    # Container mode: use working_dir as-is (relative to container's starting point)
+                    # If no working_dir specified, don't cd at all in the container
+                    if [[ -z "$working_dir_for_container" ]]; then
+                        working_dir_for_container=""
+                    fi
+                else
+                    # Non-container mode: resolve paths relative to script directory
+                    if [[ -z "$working_dir" ]]; then
+                        working_dir="$script_dir"
+                    fi
+                    
+                    # Expand tilde in working_dir if present
+                    working_dir="${working_dir/#\~/$HOME}"
+                    
+                    # Make relative paths relative to script directory
+                    if [[ ! "$working_dir" =~ ^/ ]]; then
+                        working_dir="$script_dir/$working_dir"
+                    fi
                 fi
                 
                 # Execute command
                 local command="${APP_ACTIONS[$app:$action]:-}"
-                if [[ -n "$command" && -d "$working_dir" ]]; then
-                    cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1
+                if [[ -n "$CONTAINER_COMMAND" ]]; then
+                    # Container mode: validate command exists and execute with cd inside container
+                    if [[ -n "$command" ]]; then
+                        local escaped_command="$(printf '%q' "$command")"
+                        if [[ -n "$working_dir_for_container" ]]; then
+                            local container_cmd="cd $(printf '%q' "$working_dir_for_container") && $command"
+                            local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+                            bash -c "$CONTAINER_COMMAND bash -lc $escaped_container_cmd" > "$log_file" 2>&1
+                        else
+                            bash -c "$CONTAINER_COMMAND bash -lc $escaped_command" > "$log_file" 2>&1
+                        fi
+                    else
+                        echo "Error: Command not found" > "$log_file" 2>&1
+                        exit 1
+                    fi
                 else
-                    echo "Error: Command not found or working directory invalid" > "$log_file" 2>&1
-                    exit 1
+                    # Non-container mode: validate command and working directory exist
+                    if [[ -n "$command" && -d "$working_dir" ]]; then
+                        cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1
+                    else
+                        echo "Error: Command not found or working directory invalid" > "$log_file" 2>&1
+                        exit 1
+                    fi
                 fi
             ) &
             
@@ -768,19 +886,22 @@ execute_parallel() {
         fi
     done
     
-    echo
-    print_color "$BOLD" "📊 Execution Summary:"
-    print_color "$GREEN" "✅ Successful: $success_count"
-    if [[ $failure_count -gt 0 ]]; then
-        print_color "$RED" "❌ Failed: $failure_count"
-        if [[ ${#failed_commands[@]} -gt 0 ]]; then
-            print_color "$RED" "Failed commands:"
-            for failed_cmd in "${failed_commands[@]}"; do
-                print_color "$RED" "  - $failed_cmd"
-            done
+    # Only show summary if more than one action was executed
+    if [[ ${#pids[@]} -gt 1 ]]; then
+        echo
+        print_color "$BOLD" "📊 Execution Summary:"
+        print_color "$GREEN" "✅ Successful: $success_count"
+        if [[ $failure_count -gt 0 ]]; then
+            print_color "$RED" "❌ Failed: $failure_count"
+            if [[ ${#failed_commands[@]} -gt 0 ]]; then
+                print_color "$RED" "Failed commands:"
+                for failed_cmd in "${failed_commands[@]}"; do
+                    print_color "$RED" "  - $failed_cmd"
+                done
+            fi
         fi
+        echo
     fi
-    echo
     
     # Show log viewer directly
     if [[ ${#EXECUTION_RESULTS[@]} -gt 0 ]]; then
@@ -1380,16 +1501,10 @@ execute_ci_mode() {
     local -a matched_apps
     readarray -t matched_apps <<< "$matched_apps_output"
     
-    echo "Shell-Bun CI Mode: Fuzzy Pattern Execution (Parallel)"
-    echo "App pattern: '$app_pattern'"
-    echo "Action pattern: '$action_pattern'"
-    echo "Matched apps: ${matched_apps[*]}"
-    echo "Config: $CONFIG_FILE"
-    echo "========================================"
-    
     # Prepare completely parallel execution (all actions run in parallel)
     local -a pids=()
     local -a command_descriptions=()
+    local found_any_action=false
     
     # Start all matched commands in parallel
     for app in "${matched_apps[@]}"; do
@@ -1407,6 +1522,8 @@ execute_ci_mode() {
             continue
         fi
         
+        found_any_action=true
+        
         local -a matched_actions
         readarray -t matched_actions <<< "$matched_actions_output"
         
@@ -1422,9 +1539,31 @@ execute_ci_mode() {
         done
     done
     
-    echo ""
-    echo "Running ${#pids[@]} actions in parallel..."
-    echo "========================================"
+    # Check if any actions were found
+    if [[ "$found_any_action" == "false" || ${#pids[@]} -eq 0 ]]; then
+        echo ""
+        echo "Error: No actions found matching pattern '$action_pattern'"
+        exit 1
+    fi
+    
+    # Determine if this is a single action execution
+    local is_single_action=false
+    if [[ ${#pids[@]} -eq 1 ]]; then
+        is_single_action=true
+    fi
+    
+    # For multiple actions, show verbose header
+    if [[ "$is_single_action" == "false" ]]; then
+        echo "Shell-Bun CI Mode: Fuzzy Pattern Execution (Parallel)"
+        echo "App pattern: '$app_pattern'"
+        echo "Action pattern: '$action_pattern'"
+        echo "Matched apps: ${matched_apps[*]}"
+        echo "Config: $CONFIG_FILE"
+        echo "========================================"
+        echo ""
+        echo "Running ${#pids[@]} actions in parallel..."
+        echo "========================================"
+    fi
     
     # Wait for all background processes and collect results
     local total_success=0
@@ -1443,21 +1582,31 @@ execute_ci_mode() {
         fi
     done
     
-    echo ""
-    echo "========================================"
-    echo "CI Execution Summary (Parallel):"
-    echo "Commands executed: ${#pids[@]}"
-    echo "✅ Successful operations: $total_success"
-    if [[ $total_failure -gt 0 ]]; then
-        echo "❌ Failed operations: $total_failure"
-        echo "Failed commands:"
-        for failed_cmd in "${failed_commands[@]}"; do
-            echo "  - $failed_cmd"
-        done
-        exit 1
+    # Only show summary if more than one action was executed
+    if [[ "$is_single_action" == "false" ]]; then
+        echo ""
+        echo "========================================"
+        echo "CI Execution Summary (Parallel):"
+        echo "Commands executed: ${#pids[@]}"
+        echo "✅ Successful operations: $total_success"
+        if [[ $total_failure -gt 0 ]]; then
+            echo "❌ Failed operations: $total_failure"
+            echo "Failed commands:"
+            for failed_cmd in "${failed_commands[@]}"; do
+                echo "  - $failed_cmd"
+            done
+            exit 1
+        else
+            echo "🎉 All operations completed successfully"
+            exit 0
+        fi
     else
-        echo "🎉 All operations completed successfully"
-        exit 0
+        # Single action: just exit with appropriate code
+        if [[ $total_failure -gt 0 ]]; then
+            exit 1
+        else
+            exit 0
+        fi
     fi
 }
 
@@ -1565,7 +1714,11 @@ main() {
     # Parse the configuration file first
     print_color "$BLUE" "Loading configuration from: $CONFIG_FILE"
     parse_config
-    
+
+    if [[ -n "$CONTAINER_COMMAND" ]]; then
+        print_color "$PURPLE" "Container mode enabled using: $CONTAINER_COMMAND"
+    fi
+
     # Handle CI mode (non-interactive)
     if [[ $CI_MODE -eq 1 ]]; then
         if [[ -z "$CI_APP" ]]; then
