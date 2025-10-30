@@ -159,9 +159,9 @@ jobs:
           # Extract changelog for this version from git commits
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
-            CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges)
+            CHANGELOG=$(git log ${PREV_TAG}..HEAD --pretty=format:"- %s" --no-merges | grep -v "Bump version to")
           else
-            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges | head -20)
+            CHANGELOG=$(git log --pretty=format:"- %s" --no-merges | grep -v "Bump version to" | head -20)
           fi
           
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
@@ -180,27 +180,6 @@ jobs:
             
             ### Changes
             ${{ steps.changelog.outputs.changelog }}
-            
-            ### Installation
-            
-            ```bash
-            # Download shell-bun.sh
-            curl -O https://raw.githubusercontent.com/Chetic/shell-bun/v${{ steps.version.outputs.version }}/shell-bun.sh
-            chmod +x shell-bun.sh
-            
-            # Download example config
-            curl -O https://raw.githubusercontent.com/Chetic/shell-bun/v${{ steps.version.outputs.version }}/shell-bun.cfg
-            ```
-            
-            ### Usage
-            
-            ```bash
-            # Interactive mode
-            ./shell-bun.sh
-            
-            # CI mode
-            ./shell-bun.sh --ci MyApp build
-            ```
             
             See [README.md](https://github.com/Chetic/shell-bun/blob/v${{ steps.version.outputs.version }}/README.md) for full documentation.
           files: |
