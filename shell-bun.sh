@@ -154,6 +154,71 @@ declare -a EXECUTION_RESULTS=() # Track execution results for log viewing
 GLOBAL_LOG_DIR=""              # Global log directory from config
 CONTAINER_COMMAND=""           # Global container command from config
 
+# Less configuration helpers
+SHELL_BUN_LESSKEY_FILE=""
+SHELL_BUN_LESSKEY_SOURCE=""
+SHELL_BUN_LESSKEY_INITIALIZED=0
+
+append_exit_trap() {
+    local new_cmd="$1"
+    local existing_cmd
+    existing_cmd=$(trap -p EXIT | awk -F"'" '/EXIT$/ {print $(NF-1)}')
+
+    if [[ -z "$existing_cmd" ]]; then
+        trap "$new_cmd" EXIT
+    else
+        trap "$existing_cmd; $new_cmd" EXIT
+    fi
+}
+
+cleanup_less_key_temp() {
+    if [[ -n "$SHELL_BUN_LESSKEY_FILE" && -f "$SHELL_BUN_LESSKEY_FILE" ]]; then
+        rm -f "$SHELL_BUN_LESSKEY_FILE"
+    fi
+    if [[ -n "$SHELL_BUN_LESSKEY_SOURCE" && -f "$SHELL_BUN_LESSKEY_SOURCE" ]]; then
+        rm -f "$SHELL_BUN_LESSKEY_SOURCE"
+    fi
+
+    SHELL_BUN_LESSKEY_FILE=""
+    SHELL_BUN_LESSKEY_SOURCE=""
+    SHELL_BUN_LESSKEY_INITIALIZED=0
+}
+
+setup_less_exit_binding() {
+    if [[ $SHELL_BUN_LESSKEY_INITIALIZED -eq 1 ]]; then
+        return
+    fi
+
+    if ! command -v lesskey >/dev/null 2>&1; then
+        return
+    fi
+
+    local src_file
+    src_file=$(mktemp "${TMPDIR:-/tmp}/shell-bun-lesskey-src.XXXXXX") || return
+
+    local compiled_file
+    compiled_file=$(mktemp "${TMPDIR:-/tmp}/shell-bun-lesskey.XXXXXX") || {
+        rm -f "$src_file"
+        return
+    }
+
+    cat <<'EOF' > "$src_file"
+#command
+\e quit
+#end
+EOF
+
+    if lesskey -o "$compiled_file" "$src_file" >/dev/null 2>&1; then
+        SHELL_BUN_LESSKEY_SOURCE="$src_file"
+        SHELL_BUN_LESSKEY_FILE="$compiled_file"
+        export LESSKEY="$SHELL_BUN_LESSKEY_FILE"
+        SHELL_BUN_LESSKEY_INITIALIZED=1
+        append_exit_trap 'cleanup_less_key_temp'
+    else
+        rm -f "$src_file" "$compiled_file"
+    fi
+}
+
 # Function to print colored output
 print_color() {
     local color=$1
@@ -579,7 +644,7 @@ show_log_viewer() {
     # Hide cursor to prevent flickering
     printf '\033[?25l'
     # Ensure cursor is shown on exit (also done in show_unified_menu, good practice here too)
-    trap 'printf "\033[?25h"' EXIT
+    append_exit_trap 'printf "\033[?25h"'
 
     local log_viewer_static_header_height=2 # "Select a log file..." + echo
     local dynamic_content_start_line=$((log_viewer_static_header_height + 1)) # Should be 3
@@ -728,7 +793,8 @@ show_log_viewer() {
                         log_file="${BASH_REMATCH[4]}"
                         
                         if [[ -f "$log_file" ]]; then
-                            # Use less with +G to go to the end of the file
+                            # Configure less to exit with ESC and go to the end of the file
+                            setup_less_exit_binding
                             less +G "$log_file"
                         else
                             print_color "$RED" "Log file not found: $log_file"
@@ -1070,7 +1136,7 @@ show_unified_menu() {
     done
     
     printf '\033[?25l' # Hide cursor
-    trap 'printf "\033[?25h"' EXIT # Ensure cursor is shown on exit
+    append_exit_trap 'printf "\033[?25h"' # Ensure cursor is shown on exit
     
     while true; do
         if [[ "$first_draw" == "true" ]] || [[ "$need_full_clear" == "true" ]]; then
