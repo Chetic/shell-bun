@@ -1,3 +1,28 @@
+# Logs
 debug.log
 logs/
+*.log
 
+# Build artifacts
+shellbun
+shellbun.exe
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+
+# Coverage and profiling outputs
+coverage.*
+*.cover
+*.prof
+coverage.out
+profile.out
+
+# Distribution directories
+bin/
+dist/
+
+# macOS metadata
+.DS_Store
