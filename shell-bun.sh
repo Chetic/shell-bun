@@ -1625,12 +1625,14 @@ match_apps_fuzzy() {
         for app in "${APPS[@]}"; do
             # Check if already matched
             local already_matched=false
-            for matched in "${matched_apps[@]}"; do
-                if [[ "$matched" == "$app" ]]; then
-                    already_matched=true
-                    break
-                fi
-            done
+            if [[ ${#matched_apps[@]} -gt 0 ]]; then
+                for matched in "${matched_apps[@]}"; do
+                    if [[ "$matched" == "$app" ]]; then
+                        already_matched=true
+                        break
+                    fi
+                done
+            fi
             
             if [[ "$already_matched" == "false" ]]; then
                 # Support different matching patterns
