@@ -2,19 +2,19 @@
 
 > ☕ **Shell-Bun** combines "build" and "run" - inspired by Swedish fika culture, where gathering for coffee and pastries (🍩🍰) creates the perfect environment for productive collaboration!
 
-An interactive bash script for managing build environments with advanced features and no external dependencies.
+A terminal user interface written in Go (powered by [Bubble Tea](https://github.com/charmbracelet/bubbletea)) for managing build environments with speed, parallelism, and polish.
 
 ![demo](shell-bun-demo.gif)
 
 ## 🚀 Easy Deployment
 
-**Shell-Bun is completely standalone** - it's a single bash script with zero dependencies that can be deployed anywhere instantly:
+**Shell-Bun ships as a single self-contained binary** – build it once with Go and copy it anywhere:
 
-- **Copy & Run**: Simply copy `shell-bun.sh` to any system with bash > 4, write a simple `shell-bun.cfg` file and run `shell-bun.sh`
-- **No Installation Required**: No package managers, no compilation, no setup scripts
-- **Portable**: Works on Linux, macOS, Windows (with bash), containers, cloud instances, embedded systems
-- **Self-Contained**: Everything needed is in one file - perfect for DevOps, CI/CD, and quick deployments
-- **Version Control Friendly**: Add it directly to your project repositories
+- **Build & Copy**: `go build ./cmd/shellbun` produces the `shellbun` executable ready for distribution
+- **No External Dependencies**: Everything is linked into the binary (Bubble Tea, lipgloss, etc.)
+- **Portable**: Works on Linux, macOS, Windows (via cross-compilation), containers, cloud instances, embedded systems
+- **Self-Contained**: No runtime installation scripts or package managers required
+- **Version Control Friendly**: Commit the binary or build recipe alongside your project
 
 ## Features
 
@@ -29,7 +29,7 @@ An interactive bash script for managing build environments with advanced feature
 - **Containerized Execution**: Optionally run all commands through a configurable container command
 - **Interactive Log Viewer**: Browse and view execution logs after everything is completed
 - **Color-coded Output**: Beautiful terminal interface with intuitive visual feedback
-- **No Dependencies**: Pure bash implementation with no external tools required
+- **Single Binary Distribution**: Compiled Go executable with Bubble Tea UI stack included
 
 ## 🤖 CI/CD & Automation Ready
 
@@ -54,24 +54,27 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 
 ## Usage
 
-### Running the Script
-
-#### Interactive Mode (Default)
+### Build the Binary
 ```bash
-# Use default config file (shell-bun.cfg)
-./shell-bun.sh
-
-# Use custom config file
-./shell-bun.sh my-config.txt
-
-# Enable debug mode (creates debug.log file)
-./shell-bun.sh --debug
+go build ./cmd/shellbun
 ```
 
-#### Non-Interactive Mode (CI/CD)
+### Interactive Mode (Default)
+```bash
+# Use default config file (shell-bun.cfg)
+./shellbun
+
+# Use custom config file
+./shellbun --config my-config.cfg
+
+# Enable debug mode (creates/overwrites debug.log)
+./shellbun --debug
+```
+
+### Non-Interactive Mode (CI/CD)
 ```bash
 # Run multiple actions for an application
-./shell-bun.sh --ci APIServer test_unit,deploy_staging
+./shellbun --ci APIServer test_unit,deploy_staging
 ```
 
 **Fuzzy Pattern Matching:**
@@ -79,7 +82,7 @@ Shell-Bun supports powerful pattern matching for both applications and actions i
 
 ```bash
 # Wildcard patterns  
-./shell-bun.sh --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
+./shellbun --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
 ```
 
 **CI Mode Features:**
@@ -94,16 +97,12 @@ Shell-Bun supports powerful pattern matching for both applications and actions i
 
 ### On Windows
 
-Since this is a bash script, you'll need to run it in a bash environment like:
-- Git Bash
-- WSL (Windows Subsystem for Linux) 
-- Cygwin
-- MSYS2
-
-Example in Git Bash:
+Build for Windows using Go's cross-compilation support:
 ```bash
-bash shell-bun.sh
+GOOS=windows GOARCH=amd64 go build -o shellbun.exe ./cmd/shellbun
 ```
+
+Run the resulting executable in PowerShell, Command Prompt, or a terminal of your choice.
 
 ## Interactive Controls
 
