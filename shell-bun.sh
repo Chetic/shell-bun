@@ -1659,36 +1659,39 @@ match_apps_fuzzy() {
 match_actions_fuzzy() {
     local pattern="$1"
     local app="$2"
-    local -a matched_actions=()
-    local -a available_actions=()
-    
+    local matched_actions=()
+    local available_actions=()
+
     # Get available actions for this app from the generic action list
     local actions="${APP_ACTION_LIST[$app]:-}"
     if [[ -n "$actions" ]]; then
-        read -ra available_actions <<< "$actions"
+        read -r -a available_actions <<< "$actions"
     fi
-    
+
     if [[ "$pattern" == "all" ]]; then
         # Return all available actions for "all"
         matched_actions=("${available_actions[@]}")
     else
         # Split comma-separated patterns
-        IFS=',' read -ra patterns <<< "$pattern"
-        
+        local patterns=()
+        IFS=',' read -r -a patterns <<< "$pattern"
+
         for pat in "${patterns[@]}"; do
             # Trim whitespace
             pat=$(echo "$pat" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-            
+
             for action in "${available_actions[@]}"; do
                 # Check if already matched
                 local already_matched=false
-                for matched in "${matched_actions[@]}"; do
-                    if [[ "$matched" == "$action" ]]; then
-                        already_matched=true
-                        break
-                    fi
-                done
-                
+                if [[ ${#matched_actions[@]} -gt 0 ]]; then
+                    for matched in "${matched_actions[@]}"; do
+                        if [[ "$matched" == "$action" ]]; then
+                            already_matched=true
+                            break
+                        fi
+                    done
+                fi
+
                 if [[ "$already_matched" == "false" ]]; then
                     # Support different matching patterns
                     if [[ "$pat" == "$action" ]]; then
@@ -1707,8 +1710,10 @@ match_actions_fuzzy() {
             done
         done
     fi
-    
-    printf '%s\n' "${matched_actions[@]}"
+
+    if [[ ${#matched_actions[@]} -gt 0 ]]; then
+        printf '%s\n' "${matched_actions[@]}"
+    fi
 }
 
 # Main function
