@@ -66,6 +66,9 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 
 # Enable debug mode (creates debug.log file)
 ./shell-bun.sh --debug
+
+# Override the container command for this run
+./shell-bun.sh --container "podman exec -it my-builder" my-config.txt
 ```
 
 #### Non-Interactive Mode (CI/CD)
@@ -149,7 +152,7 @@ working_dir=~/projects/my-app
 ```
 
 - `log_dir` (optional): Sets a global directory where log files are stored. Individual apps can override it.
-- `container` (optional): When set, every command is executed inside the specified container command. Shell-Bun automatically appends `bash -lc "<your command>"` to the container invocation so complex workflows can stay isolated.
+- `container` (optional): When set, every command is executed inside the specified container command. Shell-Bun automatically appends `bash -lc "<your command>"` to the container invocation so complex workflows can stay isolated. You can override the configured value per run with the `--container` CLI flag.
 
 ## Testing
 

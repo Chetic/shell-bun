@@ -25,6 +25,7 @@ setup() {
     [[ "$output" =~ "Usage:" ]]
     [[ "$output" =~ "Interactive mode" ]]
     [[ "$output" =~ "Non-interactive mode" ]]
+    [[ "$output" =~ "--container" ]]
 }
 
 @test "Help flag: -h" {
