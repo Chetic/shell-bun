@@ -53,6 +53,8 @@ DEBUG_MODE=0
 CI_MODE=0
 CI_APP=""
 CI_ACTIONS=""
+CLI_CONTAINER_OVERRIDE=0
+CLI_CONTAINER_COMMAND=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -73,6 +75,20 @@ while [[ $# -gt 0 ]]; do
                 fi
             fi
             ;;
+        --container)
+            if [[ $# -lt 2 ]]; then
+                echo "Error: --container requires a command argument (use --container <cmd> or --container=<cmd>)"
+                exit 1
+            fi
+            CLI_CONTAINER_OVERRIDE=1
+            CLI_CONTAINER_COMMAND="$2"
+            shift 2
+            ;;
+        --container=*)
+            CLI_CONTAINER_OVERRIDE=1
+            CLI_CONTAINER_COMMAND="${1#--container=}"
+            shift
+            ;;
         --help|-h)
             echo "Shell-Bun v$VERSION - Interactive build environment script"
             echo "Copyright (c) 2025, Fredrik Reveny"
@@ -84,6 +100,7 @@ while [[ $# -gt 0 ]]; do
             echo "  $0                         # Use default config (shell-bun.cfg)"
             echo "  $0 my-config.txt           # Use custom config file"
             echo "  $0 --debug                 # Enable debug logging"
+            echo "  $0 --container \"podman exec ...\"   # Override container command"
             echo ""
             echo "Non-interactive mode (CI/CD) with fuzzy pattern matching:"
             echo "  $0 --ci APP_PATTERN ACTION_PATTERN   # Run actions matching patterns"
@@ -152,7 +169,8 @@ declare -A APP_LOG_DIR=()      # Key: "app", Value: "log directory path"
 declare -a SELECTED_ITEMS=()
 declare -a EXECUTION_RESULTS=() # Track execution results for log viewing
 GLOBAL_LOG_DIR=""              # Global log directory from config
-CONTAINER_COMMAND=""           # Global container command from config
+CONFIG_CONTAINER_COMMAND=""    # Container command defined in config (if any)
+CONTAINER_COMMAND=""           # Effective container command after CLI overrides
 
 # Function to print colored output
 print_color() {
@@ -236,6 +254,7 @@ parse_config() {
     fi
 
     local current_app=""
+    CONFIG_CONTAINER_COMMAND=""
     
     while IFS= read -r line || [[ -n "$line" ]]; do
         # Skip empty lines and comments
@@ -262,7 +281,7 @@ parse_config() {
                 GLOBAL_LOG_DIR="$value"
             elif [[ -z "$current_app" && "$key" == "container" ]]; then
                 # Global container command (outside any app section)
-                CONTAINER_COMMAND="$value"
+                CONFIG_CONTAINER_COMMAND="$value"
             elif [[ -n "$current_app" && "$key" == "working_dir" ]]; then
                 # Special handling for working_dir
                 APP_WORKING_DIR["$current_app"]="$value"
@@ -284,6 +303,12 @@ parse_config() {
         fi
     done < "$CONFIG_FILE"
     
+    if [[ $CLI_CONTAINER_OVERRIDE -eq 1 ]]; then
+        CONTAINER_COMMAND="$CLI_CONTAINER_COMMAND"
+    else
+        CONTAINER_COMMAND="$CONFIG_CONTAINER_COMMAND"
+    fi
+
     if [[ ${#APPS[@]} -eq 0 ]]; then
         print_color "$RED" "Error: No applications found in configuration file!"
         exit 1
@@ -335,7 +360,13 @@ show_app_details() {
     
     # Show container configuration
     if [[ -n "$CONTAINER_COMMAND" ]]; then
-        echo "Container:      $CONTAINER_COMMAND"
+        if [[ $CLI_CONTAINER_OVERRIDE -eq 1 ]]; then
+            echo "Container:      $CONTAINER_COMMAND (overridden via --container)"
+        else
+            echo "Container:      $CONTAINER_COMMAND"
+        fi
+    elif [[ $CLI_CONTAINER_OVERRIDE -eq 1 ]]; then
+        echo "Container:      (overridden via --container to run on host)"
     else
         echo "Container:      (none - runs on host)"
     fi
@@ -1723,7 +1754,17 @@ main() {
     parse_config
 
     if [[ -n "$CONTAINER_COMMAND" ]]; then
-        print_color "$PURPLE" "Container mode enabled using: $CONTAINER_COMMAND"
+        if [[ $CLI_CONTAINER_OVERRIDE -eq 1 ]]; then
+            print_color "$PURPLE" "Container mode enabled using CLI override: $CONTAINER_COMMAND"
+        else
+            print_color "$PURPLE" "Container mode enabled using: $CONTAINER_COMMAND"
+        fi
+    elif [[ $CLI_CONTAINER_OVERRIDE -eq 1 ]]; then
+        if [[ -n "$CONFIG_CONTAINER_COMMAND" ]]; then
+            print_color "$YELLOW" "Container command overridden via --container (original: $CONFIG_CONTAINER_COMMAND)"
+        else
+            print_color "$YELLOW" "Container command overridden via --container"
+        fi
     fi
 
     # Handle CI mode (non-interactive)
