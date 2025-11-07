@@ -4,31 +4,16 @@ setup() {
     export TEST_DIR="$BATS_TEST_DIRNAME"
     export SCRIPT_DIR="$(cd "$TEST_DIR/.." && pwd)"
     export TEST_CONFIG="$TEST_DIR/fixtures/container_override.cfg"
-    export CONTAINER_ENV_PATH="/run/.containerenv"
-    export CONTAINER_ENV_BACKUP="${CONTAINER_ENV_PATH}.bats-backup"
-    export CONTAINER_ENV_CREATED_BY_TEST=0
+    export SHELL_BUN_CONTAINER_MARKER_FILE="$BATS_TEST_TMPDIR/containerenv"
+    export CONTAINER_ENV_PATH="$SHELL_BUN_CONTAINER_MARKER_FILE"
 }
 
 create_container_env_marker() {
-    if [ -e "$CONTAINER_ENV_PATH" ] && [ ! -e "$CONTAINER_ENV_BACKUP" ]; then
-        mv "$CONTAINER_ENV_PATH" "$CONTAINER_ENV_BACKUP"
-    fi
     : > "$CONTAINER_ENV_PATH"
-    export CONTAINER_ENV_CREATED_BY_TEST=1
 }
 
 restore_container_env_marker() {
-    if [ "${CONTAINER_ENV_CREATED_BY_TEST:-0}" -eq 1 ]; then
-        if [ -e "$CONTAINER_ENV_BACKUP" ]; then
-            rm -f "$CONTAINER_ENV_PATH"
-            mv "$CONTAINER_ENV_BACKUP" "$CONTAINER_ENV_PATH"
-        else
-            rm -f "$CONTAINER_ENV_PATH"
-        fi
-        export CONTAINER_ENV_CREATED_BY_TEST=0
-    elif [ -e "$CONTAINER_ENV_BACKUP" ]; then
-        mv "$CONTAINER_ENV_BACKUP" "$CONTAINER_ENV_PATH"
-    fi
+    rm -f "$CONTAINER_ENV_PATH"
 }
 
 @test "--container overrides container command from config" {
@@ -86,7 +71,7 @@ CONFIG
     restore_container_env_marker
 
     [ "$status" -eq 0 ]
-    [[ "$output" == *"Detected /run/.containerenv - ignoring configured container command"* ]]
+    [[ "$output" == *"Detected $CONTAINER_ENV_PATH - ignoring configured container command"* ]]
     [[ "$output" == *"container source: none"* ]]
 }
 
@@ -110,7 +95,7 @@ CONFIG
 
     [ "$status" -eq 0 ]
     [[ "$output" == *"container source: cli"* ]]
-    [[ "$output" != *"Detected /run/.containerenv - ignoring configured container command"* ]]
+    [[ "$output" != *"Detected $CONTAINER_ENV_PATH - ignoring configured container command"* ]]
 }
 
 teardown() {
