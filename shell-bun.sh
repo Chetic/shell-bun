@@ -172,6 +172,28 @@ GLOBAL_LOG_DIR=""              # Global log directory from config
 CONFIG_CONTAINER_COMMAND=""    # Container command defined in config (if any)
 CONTAINER_COMMAND=""           # Effective container command after CLI overrides
 
+# Helper functions for safely working with SELECTED_ITEMS under set -u and
+# older bash versions where empty array expansions could trigger errors
+selected_items_defined() {
+    [[ ${SELECTED_ITEMS+x} ]]
+}
+
+selected_items_count() {
+    if selected_items_defined; then
+        printf '%d\n' "${#SELECTED_ITEMS[@]}"
+    else
+        printf '0\n'
+    fi
+}
+
+selected_items_debug_view() {
+    if selected_items_defined && [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
+        printf '%s' "${SELECTED_ITEMS[*]}"
+    else
+        printf '<none>'
+    fi
+}
+
 # Function to print colored output
 print_color() {
     local color=$1
@@ -780,10 +802,12 @@ show_log_viewer() {
 # Function to execute multiple commands in parallel
 execute_parallel() {
     local -a pids=()
-    local -a commands=()
     local -a command_names=()
     local -a log_files=()
-    local total=${#SELECTED_ITEMS[@]}
+    local total=0
+    if selected_items_defined; then
+        total=${#SELECTED_ITEMS[@]}
+    fi
     
     if [[ $total -eq 0 ]]; then
         print_color "$YELLOW" "No items selected for execution."
@@ -798,102 +822,104 @@ execute_parallel() {
     
     # Generate log files before starting background processes
     local counter=0
-    for item in "${SELECTED_ITEMS[@]}"; do
-        if [[ "$item" =~ ^(.+)\ -\ Show\ Details$ ]]; then
-            # Skip details items
-            continue
-        elif [[ "$item" =~ ^(.+)\ -\ (.+)$ ]]; then
-            local app="${BASH_REMATCH[1]}"
-            local action="${BASH_REMATCH[2]}"
-            
-            # Get and display the command
-            local command="${APP_ACTIONS[$app:$action]:-}"
-            
-            # Build the full command that will be executed (for display purposes)
-            local working_dir_for_display="${APP_WORKING_DIR[$app]:-}"
-            local full_command_display
-            local escaped_command="$(printf '%q' "$command")"
-            if [[ -n "$CONTAINER_COMMAND" ]]; then
-                if [[ -n "$working_dir_for_display" ]]; then
-                    local container_cmd="cd $(printf '%q' "$working_dir_for_display") && $command"
-                    local escaped_container_cmd="$(printf '%q' "$container_cmd")"
-                    full_command_display="$CONTAINER_COMMAND bash -lc $escaped_container_cmd"
-                else
-                    full_command_display="$CONTAINER_COMMAND bash -lc $escaped_command"
-                fi
-            else
-                full_command_display="bash -c $escaped_command"
-            fi
-            
-            log_execution "$app" "$action" "start" "$full_command_display"
-            
-            # Generate log file path
-            local log_file=$(generate_log_file_path "$app" "$action")
-            log_files+=("$log_file")
-            
-            # Start command in background, redirecting to log file
-            (
-                # Get working directory
-                local working_dir="${APP_WORKING_DIR[$app]:-}"
-                local working_dir_for_container="$working_dir"  # Store original for container use
-                local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-                
-                # When using container, working_dir is relative to the container's starting point
-                # When not using container, working_dir is relative to the script directory
-                if [[ -n "$CONTAINER_COMMAND" ]]; then
-                    # Container mode: use working_dir as-is (relative to container's starting point)
-                    # If no working_dir specified, don't cd at all in the container
-                    if [[ -z "$working_dir_for_container" ]]; then
-                        working_dir_for_container=""
-                    fi
-                else
-                    # Non-container mode: resolve paths relative to script directory
-                    if [[ -z "$working_dir" ]]; then
-                        working_dir="$script_dir"
-                    fi
-                    
-                    # Expand tilde in working_dir if present
-                    working_dir="${working_dir/#\~/$HOME}"
-                    
-                    # Make relative paths relative to script directory
-                    if [[ ! "$working_dir" =~ ^/ ]]; then
-                        working_dir="$script_dir/$working_dir"
-                    fi
-                fi
-                
-                # Execute command
+    if selected_items_defined; then
+        for item in "${SELECTED_ITEMS[@]}"; do
+            if [[ "$item" =~ ^(.+)\ -\ Show\ Details$ ]]; then
+                # Skip details items
+                continue
+            elif [[ "$item" =~ ^(.+)\ -\ (.+)$ ]]; then
+                local app="${BASH_REMATCH[1]}"
+                local action="${BASH_REMATCH[2]}"
+
+                # Get and display the command
                 local command="${APP_ACTIONS[$app:$action]:-}"
+
+                # Build the full command that will be executed (for display purposes)
+                local working_dir_for_display="${APP_WORKING_DIR[$app]:-}"
+                local full_command_display
+                local escaped_command="$(printf '%q' "$command")"
                 if [[ -n "$CONTAINER_COMMAND" ]]; then
-                    # Container mode: validate command exists and execute with cd inside container
-                    if [[ -n "$command" ]]; then
-                        local escaped_command="$(printf '%q' "$command")"
-                        if [[ -n "$working_dir_for_container" ]]; then
-                            local container_cmd="cd $(printf '%q' "$working_dir_for_container") && $command"
-                            local escaped_container_cmd="$(printf '%q' "$container_cmd")"
-                            bash -c "$CONTAINER_COMMAND bash -lc $escaped_container_cmd" > "$log_file" 2>&1
-                        else
-                            bash -c "$CONTAINER_COMMAND bash -lc $escaped_command" > "$log_file" 2>&1
+                    if [[ -n "$working_dir_for_display" ]]; then
+                        local container_cmd="cd $(printf '%q' "$working_dir_for_display") && $command"
+                        local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+                        full_command_display="$CONTAINER_COMMAND bash -lc $escaped_container_cmd"
+                    else
+                        full_command_display="$CONTAINER_COMMAND bash -lc $escaped_command"
+                    fi
+                else
+                    full_command_display="bash -c $escaped_command"
+                fi
+
+                log_execution "$app" "$action" "start" "$full_command_display"
+
+                # Generate log file path
+                local log_file=$(generate_log_file_path "$app" "$action")
+                log_files+=("$log_file")
+
+                # Start command in background, redirecting to log file
+                (
+                    # Get working directory
+                    local working_dir="${APP_WORKING_DIR[$app]:-}"
+                    local working_dir_for_container="$working_dir"  # Store original for container use
+                    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+                    # When using container, working_dir is relative to the container's starting point
+                    # When not using container, working_dir is relative to the script directory
+                    if [[ -n "$CONTAINER_COMMAND" ]]; then
+                        # Container mode: use working_dir as-is (relative to the container's starting point)
+                        # If no working_dir specified, don't cd at all in the container
+                        if [[ -z "$working_dir_for_container" ]]; then
+                            working_dir_for_container=""
                         fi
                     else
-                        echo "Error: Command not found" > "$log_file" 2>&1
-                        exit 1
+                        # Non-container mode: resolve paths relative to the script directory
+                        if [[ -z "$working_dir" ]]; then
+                            working_dir="$script_dir"
+                        fi
+
+                        # Expand tilde in working_dir if present
+                        working_dir="${working_dir/#\~/$HOME}"
+
+                        # Make relative paths relative to script directory
+                        if [[ ! "$working_dir" =~ ^/ ]]; then
+                            working_dir="$script_dir/$working_dir"
+                        fi
                     fi
-                else
-                    # Non-container mode: validate command and working directory exist
-                    if [[ -n "$command" && -d "$working_dir" ]]; then
-                        cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1
+
+                    # Execute command
+                    local command="${APP_ACTIONS[$app:$action]:-}"
+                    if [[ -n "$CONTAINER_COMMAND" ]]; then
+                        # Container mode: validate command exists and execute with cd inside container
+                        if [[ -n "$command" ]]; then
+                            local escaped_command="$(printf '%q' "$command")"
+                            if [[ -n "$working_dir_for_container" ]]; then
+                                local container_cmd="cd $(printf '%q' "$working_dir_for_container") && $command"
+                                local escaped_container_cmd="$(printf '%q' "$container_cmd")"
+                                bash -c "$CONTAINER_COMMAND bash -lc $escaped_container_cmd" > "$log_file" 2>&1
+                            else
+                                bash -c "$CONTAINER_COMMAND bash -lc $escaped_command" > "$log_file" 2>&1
+                            fi
+                        else
+                            echo "Error: Command not found" > "$log_file" 2>&1
+                            exit 1
+                        fi
                     else
-                        echo "Error: Command not found or working directory invalid" > "$log_file" 2>&1
-                        exit 1
+                        # Non-container mode: validate command and working directory exist
+                        if [[ -n "$command" && -d "$working_dir" ]]; then
+                            cd "$working_dir" && bash -c "$command" > "$log_file" 2>&1
+                        else
+                            echo "Error: Command not found or working directory invalid" > "$log_file" 2>&1
+                            exit 1
+                        fi
                     fi
-                fi
-            ) &
-            
-            pids+=($!)
-            command_names+=("$item")
-            ((counter++))
-        fi
-    done
+                ) &
+
+                pids+=($!)
+                command_names+=("$item")
+                ((counter++))
+            fi
+        done
+    fi
     
     # Wait for all background processes and track which ones failed
     local success_count=0
@@ -946,9 +972,11 @@ execute_parallel() {
 # Function to check if item is selected
 is_selected() {
     local item="$1"
-    for selected_item in "${SELECTED_ITEMS[@]}"; do
-        [[ "$selected_item" == "$item" ]] && return 0
-    done
+    if selected_items_defined; then
+        for selected_item in "${SELECTED_ITEMS[@]}"; do
+            [[ "$selected_item" == "$item" ]] && return 0
+        done
+    fi
     return 1
 }
 
@@ -959,16 +987,18 @@ toggle_selection() {
     local found=false
     
     debug_log "toggle_selection called with: '$item'"
-    debug_log "Current SELECTED_ITEMS: ${SELECTED_ITEMS[*]}"
-    
-    for selected_item in "${SELECTED_ITEMS[@]}"; do
-        if [[ "$selected_item" == "$item" ]]; then
-            found=true
-            debug_log "Found existing selection, removing: '$selected_item'"
-        else
-            new_selected+=("$selected_item")
-        fi
-    done
+    debug_log "Current SELECTED_ITEMS: $(selected_items_debug_view)"
+
+    if selected_items_defined; then
+        for selected_item in "${SELECTED_ITEMS[@]}"; do
+            if [[ "$selected_item" == "$item" ]]; then
+                found=true
+                debug_log "Found existing selection, removing: '$selected_item'"
+            else
+                new_selected+=("$selected_item")
+            fi
+        done
+    fi
     
     if [[ "$found" == "false" ]]; then
         new_selected+=("$item")
@@ -976,7 +1006,7 @@ toggle_selection() {
     fi
     
     SELECTED_ITEMS=("${new_selected[@]}")
-    debug_log "Final SELECTED_ITEMS: ${SELECTED_ITEMS[*]}"
+    debug_log "Final SELECTED_ITEMS: $(selected_items_debug_view)"
 }
 
 # Function to select all actionable items
@@ -1020,20 +1050,22 @@ deselect_filtered() {
     local -a new_selected=()
     
     # Keep only items that are NOT in the filtered list
-    for selected_item in "${SELECTED_ITEMS[@]}"; do
-        local found_in_filtered=false
-        for filtered_item in "${filtered_items[@]}"; do
-            if [[ "$selected_item" == "$filtered_item" ]]; then
-                found_in_filtered=true
-                debug_log "Removing from selection: '$selected_item'"
-                break
+    if selected_items_defined; then
+        for selected_item in "${SELECTED_ITEMS[@]}"; do
+            local found_in_filtered=false
+            for filtered_item in "${filtered_items[@]}"; do
+                if [[ "$selected_item" == "$filtered_item" ]]; then
+                    found_in_filtered=true
+                    debug_log "Removing from selection: '$selected_item'"
+                    break
+                fi
+            done
+
+            if [[ "$found_in_filtered" == "false" ]]; then
+                new_selected+=("$selected_item")
             fi
         done
-        
-        if [[ "$found_in_filtered" == "false" ]]; then
-            new_selected+=("$selected_item")
-        fi
-    done
+    fi
     
     SELECTED_ITEMS=("${new_selected[@]}")
 }
@@ -1156,8 +1188,10 @@ show_unified_menu() {
             print_color "$DIM" "Filter: (type to search)"
         fi
         
-        if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
-            print_color "$GREEN" "Selected: ${#SELECTED_ITEMS[@]} items"
+        local selected_count
+        selected_count=$(selected_items_count)
+        if [[ $selected_count -gt 0 ]]; then
+            print_color "$GREEN" "Selected: ${selected_count} items"
         else
             print_color "$DIM" "Selected: none"
         fi
@@ -1293,7 +1327,7 @@ show_unified_menu() {
         local ascii_val=$(printf '%d' "'$key" 2>/dev/null || echo 'N/A')
         debug_log "Key pressed: '$key' (ASCII: $ascii_val)"
         debug_log "Current filter: '$filter'"
-        debug_log "Selected items count: ${#SELECTED_ITEMS[@]}"
+        debug_log "Selected items count: $(selected_items_count)"
         
         # Special debug for common problematic keys
         case "$ascii_val" in
@@ -1387,8 +1421,10 @@ show_unified_menu() {
                         need_full_clear=true
                     else
                         # Check if there are selected items
-                        if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
-                            debug_log "Running selected items (${#SELECTED_ITEMS[@]} items)"
+                        local selected_count
+                        selected_count=$(selected_items_count)
+                        if [[ $selected_count -gt 0 ]]; then
+                            debug_log "Running selected items (${selected_count} items)"
                             execute_parallel
                             need_full_clear=true
                         else
@@ -1414,7 +1450,7 @@ show_unified_menu() {
                     if [[ ! "$selection" =~ -\ Show\ Details$ ]]; then
                         debug_log "Toggling selection for: '$selection'"
                         toggle_selection "$selection"
-                        debug_log "After toggle, selected items: ${#SELECTED_ITEMS[@]}"
+                        debug_log "After toggle, selected items: $(selected_items_count)"
                         need_full_clear=true
                     else
                         debug_log "Cannot select 'Show Details' item"
@@ -1439,8 +1475,10 @@ show_unified_menu() {
                         need_full_clear=true
                     else
                         # Check if there are selected items
-                        if [[ ${#SELECTED_ITEMS[@]} -gt 0 ]]; then
-                            debug_log "Running selected items (${#SELECTED_ITEMS[@]} items)"
+                        local selected_count
+                        selected_count=$(selected_items_count)
+                        if [[ $selected_count -gt 0 ]]; then
+                            debug_log "Running selected items (${selected_count} items)"
                             execute_parallel
                             need_full_clear=true
                         else
