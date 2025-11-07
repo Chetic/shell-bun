@@ -328,7 +328,12 @@ parse_config() {
     if [[ $CLI_CONTAINER_OVERRIDE -eq 1 ]]; then
         CONTAINER_COMMAND="$CLI_CONTAINER_COMMAND"
     else
-        CONTAINER_COMMAND="$CONFIG_CONTAINER_COMMAND"
+        if [[ -f /run/.containerenv && -n "$CONFIG_CONTAINER_COMMAND" ]]; then
+            print_color "$YELLOW" "Detected /run/.containerenv - ignoring configured container command: $CONFIG_CONTAINER_COMMAND"
+            CONTAINER_COMMAND=""
+        else
+            CONTAINER_COMMAND="$CONFIG_CONTAINER_COMMAND"
+        fi
     fi
 
     if [[ ${#APPS[@]} -eq 0 ]]; then
