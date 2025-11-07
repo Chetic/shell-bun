@@ -171,6 +171,7 @@ declare -a EXECUTION_RESULTS=() # Track execution results for log viewing
 GLOBAL_LOG_DIR=""              # Global log directory from config
 CONFIG_CONTAINER_COMMAND=""    # Container command defined in config (if any)
 CONTAINER_COMMAND=""           # Effective container command after CLI overrides
+CONTAINER_ENV_FILE="${SHELL_BUN_CONTAINER_MARKER_FILE:-/run/.containerenv}"
 
 # Helper functions for safely working with SELECTED_ITEMS under set -u and
 # older bash versions where empty array expansions could trigger errors
@@ -328,7 +329,12 @@ parse_config() {
     if [[ $CLI_CONTAINER_OVERRIDE -eq 1 ]]; then
         CONTAINER_COMMAND="$CLI_CONTAINER_COMMAND"
     else
-        CONTAINER_COMMAND="$CONFIG_CONTAINER_COMMAND"
+        if [[ -f "$CONTAINER_ENV_FILE" && -n "$CONFIG_CONTAINER_COMMAND" ]]; then
+            print_color "$YELLOW" "Detected $CONTAINER_ENV_FILE - ignoring configured container command: $CONFIG_CONTAINER_COMMAND"
+            CONTAINER_COMMAND=""
+        else
+            CONTAINER_COMMAND="$CONFIG_CONTAINER_COMMAND"
+        fi
     fi
 
     if [[ ${#APPS[@]} -eq 0 ]]; then
