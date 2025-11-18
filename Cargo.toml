@@ -1,0 +1,17 @@
+[package]
+name = "shell-bun"
+version = "1.4.1"
+edition = "2021"
+authors = ["Fredrik Reveny"]
+description = "Interactive build environment manager with TUI"
+license = "BSD-3-Clause"
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.28"
+tokio = { version = "1.35", features = ["full"] }
+chrono = "0.4"
+glob = "0.3"
+anyhow = "1.0"
+dirs = "5.0"
+

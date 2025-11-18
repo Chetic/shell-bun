@@ -1,3 +1,25 @@
+# Rust build artifacts
+# Note: Cargo.lock is kept for binary applications to ensure reproducible builds
+target/
+
+# Application-specific
 debug.log
 logs/
 
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.orig
+*~
+*.rs.bk
+
+# Editor/IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test artifacts
+*.test

@@ -2,19 +2,30 @@
 
 > ☕ **Shell-Bun** combines "build" and "run" - inspired by Swedish fika culture, where gathering for coffee and pastries (🍩🍰) creates the perfect environment for productive collaboration!
 
-An interactive bash script for managing build environments with advanced features and no external dependencies.
+An interactive Rust application for managing build environments with advanced features, featuring a beautiful TUI and parallel execution.
 
 ![demo](shell-bun-demo.gif)
 
-## 🚀 Easy Deployment
+## 🚀 Installation
 
-**Shell-Bun is completely standalone** - it's a single bash script with zero dependencies that can be deployed anywhere instantly:
+**Shell-Bun is a Rust application** that can be built from source or installed via cargo:
 
-- **Copy & Run**: Simply copy `shell-bun.sh` to any system with bash > 4, write a simple `shell-bun.cfg` file and run `shell-bun.sh`
-- **No Installation Required**: No package managers, no compilation, no setup scripts
-- **Portable**: Works on Linux, macOS, Windows (with bash), containers, cloud instances, embedded systems
-- **Self-Contained**: Everything needed is in one file - perfect for DevOps, CI/CD, and quick deployments
-- **Version Control Friendly**: Add it directly to your project repositories
+### Build from Source
+```bash
+cargo build --release
+# Binary will be at target/release/shell-bun
+```
+
+### Install via Cargo
+```bash
+cargo install --path .
+```
+
+### Features
+- **Single Binary**: Build once, run anywhere - Linux, macOS, Windows
+- **Fast**: Written in Rust with parallel execution support
+- **Modern TUI**: Beautiful terminal interface with fuzzy search
+- **Portable**: Works in containers, cloud instances, and CI/CD pipelines
 
 ## Features
 
@@ -29,7 +40,7 @@ An interactive bash script for managing build environments with advanced feature
 - **Containerized Execution**: Optionally run all commands through a configurable container command
 - **Interactive Log Viewer**: Browse and view execution logs after everything is completed
 - **Color-coded Output**: Beautiful terminal interface with intuitive visual feedback
-- **No Dependencies**: Pure bash implementation with no external tools required
+- **Fast & Reliable**: Written in Rust for performance and safety
 
 ## 🤖 CI/CD & Automation Ready
 
@@ -47,7 +58,7 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 ### Perfect for DevOps
 - **Standardize Builds**: Same build commands across development and CI
 - **Version Control**: Check the script into your repository 
-- **No Installation**: Works immediately on any CI runner with bash
+- **Easy Installation**: Simple `cargo build` or use pre-built binaries
 - **Flexible Configuration**: Different configs for dev, staging, production
 - **Debug Support**: Enhanced logging for troubleshooting build issues
 - **High Performance**: Parallel execution reduces build times significantly
@@ -59,22 +70,25 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 #### Interactive Mode (Default)
 ```bash
 # Use default config file (shell-bun.cfg)
-./shell-bun.sh
+shell-bun
 
 # Use custom config file
-./shell-bun.sh my-config.txt
+shell-bun my-config.txt
 
-# Enable debug mode (creates debug.log file)
-./shell-bun.sh --debug
+# Enable debug mode
+shell-bun --debug
 
 # Override the container command for this run
-./shell-bun.sh --container "podman exec -it my-builder" my-config.txt
+shell-bun --container "podman exec -it my-builder" my-config.txt
 ```
 
 #### Non-Interactive Mode (CI/CD)
 ```bash
 # Run multiple actions for an application
-./shell-bun.sh --ci APIServer test_unit,deploy_staging
+shell-bun --ci APIServer test_unit,deploy_staging
+
+# With custom config file
+shell-bun --ci APIServer test_unit,deploy_staging my-config.cfg
 ```
 
 **Fuzzy Pattern Matching:**
@@ -82,7 +96,7 @@ Shell-Bun supports powerful pattern matching for both applications and actions i
 
 ```bash
 # Wildcard patterns  
-./shell-bun.sh --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
+shell-bun --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
 ```
 
 **CI Mode Features:**
@@ -95,17 +109,25 @@ Shell-Bun supports powerful pattern matching for both applications and actions i
 - ✅ **Parallel processing** - multiple applications run simultaneously for faster builds
 - ✅ **Fuzzy pattern matching** - powerful wildcards and substring matching
 
-### On Windows
+### Building and Development
 
-Since this is a bash script, you'll need to run it in a bash environment like:
-- Git Bash
-- WSL (Windows Subsystem for Linux) 
-- Cygwin
-- MSYS2
+**Prerequisites:**
+- Rust 1.70+ (install from [rustup.rs](https://rustup.rs/))
 
-Example in Git Bash:
+**Development:**
 ```bash
-bash shell-bun.sh
+# Clone the repository
+git clone https://github.com/Chetic/shell-bun.git
+cd shell-bun
+
+# Build in debug mode
+cargo build
+
+# Build release binary
+cargo build --release
+
+# Run tests
+cargo test
 ```
 
 ## Interactive Controls
@@ -173,18 +195,9 @@ Shell-Bun includes a comprehensive test suite to ensure reliability and maintain
 
 ### Prerequisites
 
-- **Bash 4.0+** (same as Shell-Bun)
-- **BATS** (Bash Automated Testing System)
+- **Rust 1.70+** (install from [rustup.rs](https://rustup.rs/))
 
-The test runner will automatically install BATS if it's not found, or you can install it manually:
-
-```bash
-# macOS
-brew install bats-core
-
-# Ubuntu/Debian
-sudo apt-get install bats
-```
+Tests are written in Rust and run with `cargo test`:
 
 ### Test Suite Coverage
 
