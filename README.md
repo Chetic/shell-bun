@@ -2,17 +2,17 @@
 
 > ☕ **Shell-Bun** combines "build" and "run" - inspired by Swedish fika culture, where gathering for coffee and pastries (🍩🍰) creates the perfect environment for productive collaboration!
 
-An interactive bash script for managing build environments with advanced features and no external dependencies.
+An interactive Python script for managing build environments with advanced features and minimal dependencies.
 
 ![demo](shell-bun-demo.gif)
 
 ## 🚀 Easy Deployment
 
-**Shell-Bun is completely standalone** - it's a single bash script with zero dependencies that can be deployed anywhere instantly:
+**Shell-Bun is completely standalone** - it's a single Python script with minimal dependencies that can be deployed anywhere instantly:
 
-- **Copy & Run**: Simply copy `shell-bun.sh` to any system with bash > 4, write a simple `shell-bun.cfg` file and run `shell-bun.sh`
-- **No Installation Required**: No package managers, no compilation, no setup scripts
-- **Portable**: Works on Linux, macOS, Windows (with bash), containers, cloud instances, embedded systems
+- **Copy & Run**: Simply copy `shell_bun.py` to any system with Python 3.6+, write a simple `shell-bun.cfg` file and run `python shell_bun.py`
+- **Minimal Dependencies**: Uses only Python standard library (stdlib) - no external packages required for production use
+- **Portable**: Works on Linux, macOS, Windows, containers, cloud instances, embedded systems
 - **Self-Contained**: Everything needed is in one file - perfect for DevOps, CI/CD, and quick deployments
 - **Version Control Friendly**: Add it directly to your project repositories
 
@@ -29,7 +29,7 @@ An interactive bash script for managing build environments with advanced feature
 - **Containerized Execution**: Optionally run all commands through a configurable container command
 - **Interactive Log Viewer**: Browse and view execution logs after everything is completed
 - **Color-coded Output**: Beautiful terminal interface with intuitive visual feedback
-- **No Dependencies**: Pure bash implementation with no external tools required
+- **Minimal Dependencies**: Pure Python implementation using only standard library (no external packages required)
 
 ## 🤖 CI/CD & Automation Ready
 
@@ -47,7 +47,7 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 ### Perfect for DevOps
 - **Standardize Builds**: Same build commands across development and CI
 - **Version Control**: Check the script into your repository 
-- **No Installation**: Works immediately on any CI runner with bash
+- **No Installation**: Works immediately on any CI runner with Python 3.6+
 - **Flexible Configuration**: Different configs for dev, staging, production
 - **Debug Support**: Enhanced logging for troubleshooting build issues
 - **High Performance**: Parallel execution reduces build times significantly
@@ -59,22 +59,22 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 #### Interactive Mode (Default)
 ```bash
 # Use default config file (shell-bun.cfg)
-./shell-bun.sh
+python shell_bun.py
 
 # Use custom config file
-./shell-bun.sh my-config.txt
+python shell_bun.py my-config.txt
 
 # Enable debug mode (creates debug.log file)
-./shell-bun.sh --debug
+python shell_bun.py --debug
 
 # Override the container command for this run
-./shell-bun.sh --container "podman exec -it my-builder" my-config.txt
+python shell_bun.py --container "podman exec -it my-builder" my-config.txt
 ```
 
 #### Non-Interactive Mode (CI/CD)
 ```bash
 # Run multiple actions for an application
-./shell-bun.sh --ci APIServer test_unit,deploy_staging
+python shell_bun.py --ci APIServer test_unit,deploy_staging
 ```
 
 **Fuzzy Pattern Matching:**
@@ -82,7 +82,7 @@ Shell-Bun supports powerful pattern matching for both applications and actions i
 
 ```bash
 # Wildcard patterns  
-./shell-bun.sh --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
+python shell_bun.py --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
 ```
 
 **CI Mode Features:**
@@ -97,15 +97,14 @@ Shell-Bun supports powerful pattern matching for both applications and actions i
 
 ### On Windows
 
-Since this is a bash script, you'll need to run it in a bash environment like:
-- Git Bash
-- WSL (Windows Subsystem for Linux) 
-- Cygwin
-- MSYS2
+Since this is a Python script, you'll need Python 3.6+ installed:
+- Download from [python.org](https://www.python.org/downloads/)
+- Or use Windows Store Python
+- Or use package managers like Chocolatey: `choco install python`
 
-Example in Git Bash:
+Example:
 ```bash
-bash shell-bun.sh
+python shell_bun.py
 ```
 
 ## Interactive Controls
@@ -162,28 +161,28 @@ Shell-Bun includes a comprehensive test suite to ensure reliability and maintain
 
 ```bash
 # Run all tests
-./tests/run_tests.sh
+python tests/run_tests.py
 
 # Run specific test suite
-./tests/run_tests.sh -t ci_mode
+python tests/run_tests.py -t ci_mode
 
 # Run with verbose output
-./tests/run_tests.sh -v
+python tests/run_tests.py -v
 ```
 
 ### Prerequisites
 
-- **Bash 4.0+** (same as Shell-Bun)
-- **BATS** (Bash Automated Testing System)
+- **Python 3.6+** (same as Shell-Bun)
+- **pytest** (Python testing framework)
 
-The test runner will automatically install BATS if it's not found, or you can install it manually:
+The test runner will automatically install pytest if it's not found, or you can install it manually:
 
 ```bash
-# macOS
-brew install bats-core
+# Install pytest
+pip install pytest
 
-# Ubuntu/Debian
-sudo apt-get install bats
+# Or use the requirements file
+pip install -r requirements.txt
 ```
 
 ### Test Suite Coverage
@@ -206,6 +205,6 @@ Tests run automatically on:
 - Pushes to main/master
 - Before creating releases
 
-The CI pipeline tests on multiple platforms (Ubuntu, macOS) and Bash versions (4.4, 5.0, 5.1, 5.2).
+The CI pipeline tests on multiple platforms (Ubuntu, macOS, Windows) and Python versions (3.6, 3.7, 3.8, 3.9, 3.10, 3.11, 3.12).
 
 For detailed testing documentation, see [tests/README.md](tests/README.md).
