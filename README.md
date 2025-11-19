@@ -2,19 +2,18 @@
 
 > ☕ **Shell-Bun** combines "build" and "run" - inspired by Swedish fika culture, where gathering for coffee and pastries (🍩🍰) creates the perfect environment for productive collaboration!
 
-An interactive bash script for managing build environments with advanced features and no external dependencies.
+An interactive Node.js application for managing build environments with advanced features.
 
 ![demo](shell-bun-demo.gif)
 
 ## 🚀 Easy Deployment
 
-**Shell-Bun is completely standalone** - it's a single bash script with zero dependencies that can be deployed anywhere instantly:
+**Shell-Bun is easy to set up** - it's a Node.js application that can be installed and run anywhere:
 
-- **Copy & Run**: Simply copy `shell-bun.sh` to any system with bash > 4, write a simple `shell-bun.cfg` file and run `shell-bun.sh`
-- **No Installation Required**: No package managers, no compilation, no setup scripts
-- **Portable**: Works on Linux, macOS, Windows (with bash), containers, cloud instances, embedded systems
-- **Self-Contained**: Everything needed is in one file - perfect for DevOps, CI/CD, and quick deployments
+- **Quick Install**: Run `npm install` to install dependencies, then use `node shell-bun.js` or `npm link` for global access
+- **Portable**: Works on Linux, macOS, Windows, containers, cloud instances
 - **Version Control Friendly**: Add it directly to your project repositories
+- **CI/CD Ready**: Works seamlessly in automated pipelines
 
 ## Features
 
@@ -29,7 +28,7 @@ An interactive bash script for managing build environments with advanced feature
 - **Containerized Execution**: Optionally run all commands through a configurable container command
 - **Interactive Log Viewer**: Browse and view execution logs after everything is completed
 - **Color-coded Output**: Beautiful terminal interface with intuitive visual feedback
-- **No Dependencies**: Pure bash implementation with no external tools required
+- **Node.js Based**: Modern JavaScript implementation with minimal dependencies
 
 ## 🤖 CI/CD & Automation Ready
 
@@ -47,34 +46,46 @@ Shell-Bun is designed for both interactive development and automated CI/CD pipel
 ### Perfect for DevOps
 - **Standardize Builds**: Same build commands across development and CI
 - **Version Control**: Check the script into your repository 
-- **No Installation**: Works immediately on any CI runner with bash
+- **Easy Installation**: Works on any CI runner with Node.js
 - **Flexible Configuration**: Different configs for dev, staging, production
 - **Debug Support**: Enhanced logging for troubleshooting build issues
 - **High Performance**: Parallel execution reduces build times significantly
 
+## Installation
+
+```bash
+# Install dependencies
+npm install
+
+# Make script executable (optional, for direct execution)
+chmod +x shell-bun.js
+```
+
 ## Usage
 
-### Running the Script
+### Running the Application
 
 #### Interactive Mode (Default)
 ```bash
 # Use default config file (shell-bun.cfg)
-./shell-bun.sh
+node shell-bun.js
+# or if executable:
+./shell-bun.js
 
 # Use custom config file
-./shell-bun.sh my-config.txt
+node shell-bun.js my-config.txt
 
 # Enable debug mode (creates debug.log file)
-./shell-bun.sh --debug
+node shell-bun.js --debug
 
 # Override the container command for this run
-./shell-bun.sh --container "podman exec -it my-builder" my-config.txt
+node shell-bun.js --container "podman exec -it my-builder" my-config.txt
 ```
 
 #### Non-Interactive Mode (CI/CD)
 ```bash
 # Run multiple actions for an application
-./shell-bun.sh --ci APIServer test_unit,deploy_staging
+node shell-bun.js --ci APIServer test_unit,deploy_staging
 ```
 
 **Fuzzy Pattern Matching:**
@@ -82,7 +93,7 @@ Shell-Bun supports powerful pattern matching for both applications and actions i
 
 ```bash
 # Wildcard patterns  
-./shell-bun.sh --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
+node shell-bun.js --ci "API*" "build*"             # Apps starting with 'API', actions starting with 'build'
 ```
 
 **CI Mode Features:**
@@ -97,15 +108,13 @@ Shell-Bun supports powerful pattern matching for both applications and actions i
 
 ### On Windows
 
-Since this is a bash script, you'll need to run it in a bash environment like:
-- Git Bash
-- WSL (Windows Subsystem for Linux) 
-- Cygwin
-- MSYS2
+Since this is a Node.js application, you'll need Node.js installed:
+- Download from [nodejs.org](https://nodejs.org/)
+- Or use a package manager like Chocolatey: `choco install nodejs`
 
-Example in Git Bash:
+Then run:
 ```bash
-bash shell-bun.sh
+node shell-bun.js
 ```
 
 ## Interactive Controls
@@ -173,8 +182,8 @@ Shell-Bun includes a comprehensive test suite to ensure reliability and maintain
 
 ### Prerequisites
 
-- **Bash 4.0+** (same as Shell-Bun)
-- **BATS** (Bash Automated Testing System)
+- **Node.js 14.0+** (required for Shell-Bun)
+- **BATS** (Bash Automated Testing System) for running the test suite
 
 The test runner will automatically install BATS if it's not found, or you can install it manually:
 
@@ -206,6 +215,6 @@ Tests run automatically on:
 - Pushes to main/master
 - Before creating releases
 
-The CI pipeline tests on multiple platforms (Ubuntu, macOS) and Bash versions (4.4, 5.0, 5.1, 5.2).
+The CI pipeline tests on multiple platforms (Ubuntu, macOS) and Node.js versions.
 
 For detailed testing documentation, see [tests/README.md](tests/README.md).
